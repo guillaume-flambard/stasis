@@ -97,28 +97,34 @@ describe("JSON output shapes (skill contract)", () => {
 
   test("focus --json shape includes all fields the skill reads", () => {
     const focusStatus: FocusStatus = {
-      projectName: "foo",
-      setAt: "2026-06-01T00:00:00.000Z",
-      horizonDays: 14,
-      bet: "ship MVP",
-      kill: "no users after 2 weeks",
+      focus: {
+        project: "foo",
+        setAt: "2026-06-01T00:00:00.000Z",
+        horizonDays: 14,
+        bet: "ship MVP",
+        kill: "no users after 2 weeks",
+      },
+      daysElapsed: 3,
+      daysLeft: 11,
       fidelity: 0.8,
       leaks: [{ name: "bar", tokens: 5000 }],
+      focusTokens: 50000,
+      otherTokens: 5000,
       overdue: false,
     };
     const json = JSON.parse(JSON.stringify({ active: focusStatus, history: [] }));
-    expect(json.active.projectName).toBe("foo");
+    expect(json.active.focus.project).toBe("foo");
     expect(json.active.fidelity).toBe(0.8);
     expect(json.active.leaks[0].name).toBe("bar");
     expect(json.active.overdue).toBe(false);
-    expect(json.active.bet).toBe("ship MVP");
-    expect(json.active.kill).toBe("no users after 2 weeks");
+    expect(json.active.focus.bet).toBe("ship MVP");
+    expect(json.active.focus.kill).toBe("no users after 2 weeks");
     expect(json.history).toEqual([]);
   });
 
   test("focus history record shape", () => {
     const history: FocusRecord = {
-      projectName: "bar",
+      project: "bar",
       setAt: "2026-05-01T00:00:00.000Z",
       horizonDays: 14,
       bet: "build v2",

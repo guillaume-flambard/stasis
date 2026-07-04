@@ -89,9 +89,10 @@ export function loadConfig(): Config {
       const user = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<Config>;
       cfg = mergeConfig(DEFAULT_CONFIG, user);
     } catch (e) {
-      process.stderr.write(
-        `stasis: config at ${CONFIG_PATH} is invalid JSON, using defaults (${(e as Error).message})\n`,
+      console.error(
+        `stasis: error: config at ${CONFIG_PATH} is corrupted. Fix the JSON or delete it to regenerate defaults.\n  ${(e as Error).message}`,
       );
+      process.exit(1);
     }
   }
   return {

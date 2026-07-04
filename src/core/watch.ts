@@ -96,7 +96,7 @@ function detectScatter(ctx: DetectorContext): void {
 
     if (leaksOffRoute.length > 0) {
       const leakNames = leaksOffRoute.map((l) => `${l.name} (${fmtK(l.tokens)})`).join(", ");
-      const msg = `⚠️ Scatter — fidelity dropped to ${Math.round(st.fidelity * 100)}%. Off-route leaks: ${leakNames}. Re-commit or re-evaluate?`;
+      const msg = `⚠️ On-target dropped to ${Math.round(st.fidelity * 100)}%. Off-focus work: ${leakNames}. Recommit or re-evaluate?`;
       ctx.events.push(pushEvent(ctx.state, "scatter", f.project, msg, {
         fidelity: st.fidelity, leaks: st.leaks, leaksOffRoute: leaksOffRoute.map((l) => l.name),
       }));
@@ -110,7 +110,7 @@ function detectQuotaCritical(ctx: DetectorContext): void {
   const gateNum: Record<string, number> = { green: 0, yellow: 1, red: 2 };
   if (prevGateNum < 2 && ctx.gate === "red") {
     const pct = ctx.quota.map((q) => `5h:${Math.round((q.rolling5h.pct ?? 0) * 100)}%`).join(", ");
-    const msg = `🔴 Quota critical — gate is RED (${pct}). Switch to conserve mode.`;
+    const msg = `🔴 Usage limit critical — at ${pct}. Conserve mode will activate for today's plan.`;
     ctx.events.push(pushEvent(ctx.state, "quota_critical", null, msg, { gate: ctx.gate, quota: ctx.quota }));
   }
   ctx.state.lastMeta["gate"] = gateNum[ctx.gate] ?? 0;
@@ -122,7 +122,7 @@ function detectFocusOverdue(ctx: DetectorContext): void {
   const st = focusStatus(f, ctx.usage.recentEvents, ctx.now);
   const prevOverdue = ctx.state.lastMeta["overdue"] === 1;
   if (!prevOverdue && st.overdue) {
-    const msg = `⏰ Focus overdue — "${f.project}" horizon expired without verdict. Run \`stasis focus review\`.`;
+    const msg = `⏰ Bet review overdue — "${f.project}" horizon expired. Run \`stasis focus review\`.`;
     ctx.events.push(pushEvent(ctx.state, "focus_overdue", f.project, msg, {
       project: f.project, bet: f.bet, kill: f.kill,
     }));
@@ -144,7 +144,7 @@ function detectHotProject(ctx: DetectorContext): void {
     const delta = tokens - prev;
     if (delta >= threshold) {
       const hist = ensureProjectHistory(ctx.state, name);
-      const msg = `🔥 Hot project — "${name}" got ${fmtK(delta)} tokens since last check (not in route). Consider routing or snoozing.`;
+      const msg = `🔥 Significant activity outside plan — "${name}" received ${fmtK(delta)} tokens since last check. Consider routing or snoozing.`;
       ctx.events.push(pushEvent(ctx.state, "hot_project", name, msg, {
         delta, total: tokens, timesDeferred: hist.totalSprintsDeferred,
       }));
@@ -163,7 +163,7 @@ function detectSprintBlockDone(ctx: DetectorContext): void {
 
     if (blockActual >= block.estTokens * 0.9) {
       const emoji = block.kind === "anchor" ? "✅" : block.kind === "hop" ? "↩" : "🏁";
-      const msg = `${emoji} Sprint block done — "${block.project}" (${block.kind}) spent ${fmtK(blockActual)}/${fmtK(block.estTokens)} tok. ${block.kind === "hop" ? "Ready to return to anchor." : block.kind === "anchor" ? "Checkpoint reached. Next block?" : "Route complete."}`;
+      const msg = `${emoji} Checkpoint — "${block.project}" spent ~${fmtK(blockActual)} tok (estimated ${fmtK(block.estTokens)}). Task: ${block.task}. Stop if: ${block.stop}.`;
       ctx.events.push(pushEvent(ctx.state, "sprint_block_done", block.project, msg, {
         kind: block.kind, estTokens: block.estTokens, actualTokens: blockActual, task: block.task, stop: block.stop,
       }));
@@ -226,7 +226,7 @@ export async function runWatchTick(
   // before we started watching (useful advice when first starting the daemon).
   if (state.lastCheckMs === 0 && ctx.gate === "red") {
     const pct = ctx.quota.map((q) => `5h:${Math.round((q.rolling5h.pct ?? 0) * 100)}%`).join(", ");
-    const msg = `🔴 Quota critical — gate is RED (${pct}). Switch to conserve mode.`;
+    const msg = `🔴 Usage limit critical — at ${pct}. Conserve mode will activate for today's plan.`;
     ctx.events.push(pushEvent(ctx.state, "quota_critical", null, msg, { gate: ctx.gate, quota: ctx.quota }));
   }
 

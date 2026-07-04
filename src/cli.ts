@@ -41,7 +41,7 @@ import { STASIS_DIR } from "./config.ts";
 import type { Config, ProjectSignals, ProjectOverride, ScoredProject } from "./types.ts";
 
 // ---------- tiny formatting helpers ----------
-const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
+const useColor = (process.stdout.isTTY || process.env.FORCE_COLOR) && !process.env.NO_COLOR;
 const c = (code: string, s: string) => (useColor ? `\x1b[${code}m${s}\x1b[0m` : s);
 const bold = (s: string) => c("1", s);
 const dim = (s: string) => c("2", s);
@@ -154,21 +154,21 @@ function renderQuotaLine(q: QuotaStatus): string {
   const roll = q.rolling5h.pct != null ? Math.round(q.rolling5h.pct * 100) + "%" : "—";
   const week = q.weekly.pct != null ? Math.round(q.weekly.pct * 100) + "%" : "—";
   return `  ${g("●")} ${pad(q.subscription, 16)} 5h: ${pad(roll, 5)} week: ${pad(week, 5)} ${dim(
-    `(reset in ${q.resetInDays}d, ${fmtTokens(q.weekly.tokens)} output tok/week)`,
+    `(${fmtTokens(q.weekly.tokens)}/${fmtTokens(q.weekly.cap ?? 0)} tok week · ${fmtTokens(q.rolling5h.tokens)}/${fmtTokens(q.rolling5h.cap ?? 0)} tok 5h · reset in ${q.resetInDays}d)`,
   )}`;
 }
 
-function renderScoreRow(p: ScoredProject, rank: number): string {
+function renderScoreRow(p: ScoredProject, rank: number, nameWidth: number, maxDigits: number): string {
   const s10 = (p.score * 10).toFixed(1);
   const snoozed = p.signals.override.ignore;
-  const nameStr = snoozed ? `${dim(pad(p.name, 20))}${dim(" 😴")}` : bold(pad(p.name, 22));
+  const nameStr = snoozed ? `${dim(pad(p.name, nameWidth))}${dim(" snoozed")}` : bold(pad(p.name, nameWidth));
   const days = p.signals.daysSinceCommit;
   const age = days == null ? "—" : days === 0 ? "today" : `${days}d`;
-  const dirty = p.signals.dirtyCount > 0 ? yellow(`${p.signals.dirtyCount}✎`) : dim("clean");
+  const dirty = p.signals.dirtyCount > 0 ? yellow(`${p.signals.dirtyCount}`) + dim("✎") : dim("clean");
   const cost = dim(padl(p.signals.costUsd > 0 ? fmtUsd(p.signals.costUsd) : "—", 9));
   const tags = p.signals.vault?.tags.slice(0, 2).join(",");
   const tagHint = tags ? dim("  ◆ " + tags) : "";
-  return `  ${padl(String(rank), 2)}. ${nameStr} ${cyan(padl(s10, 4))}  ${pad(
+  return `  ${padl(String(rank), maxDigits)}. ${nameStr} ${cyan(padl(s10, 4))}  ${pad(
     age,
     6,
   )} ${pad(dirty, 12)} ${cost}${tagHint}`;
@@ -259,10 +259,25 @@ function hasFlag(args: string[], f: string) {
   return args.includes(f);
 }
 
-/** Value after a `--flag`, or undefined. */
+function printHelp(args: string[], cmd: string, lines: string[]): boolean {
+  if (hasFlag(args, "--help") || hasFlag(args, "-h")) {
+    console.log(`stasis ${cmd} — ${lines[0]}`);
+    for (const l of lines.slice(1)) console.log(`  ${l}`);
+    console.log("");
+    return true;
+  }
+  return false;
+}
+
+/** Value after a `--flag`, or undefined. Errors if flag is last. */
 function argVal(args: string[], f: string): string | undefined {
   const i = args.indexOf(f);
-  return i >= 0 ? args[i + 1] : undefined;
+  if (i < 0) return undefined;
+  if (i + 1 >= args.length) {
+    console.error(`stasis: error: ${f} requires a value`);
+    process.exit(1);
+  }
+  return args[i + 1];
 }
 
 async function cmdDashboard(args: string[]) {
@@ -285,7 +300,9 @@ async function cmdDashboard(args: string[]) {
   for (const q of state.quota) console.log(renderQuotaLine(q));
   console.log(bold("\n[ SCORES ]") + dim("  (active projects — `--all` for every repo)"));
   const top = state.scored.slice(0, 12);
-  top.forEach((p, i) => console.log(renderScoreRow(p, i + 1)));
+  const nameWidth = Math.min(30, Math.max(4, ...top.map((p) => p.name.length)));
+  const maxDigits = String(top.length).length;
+  top.forEach((p, i) => console.log(renderScoreRow(p, i + 1, nameWidth, maxDigits)));
   if (state.scored.length > top.length)
     console.log(dim(`  … ${state.scored.length - top.length} more`));
   console.log(bold("\n[ TODAY ]"));
@@ -301,20 +318,24 @@ async function cmdDashboard(args: string[]) {
 }
 
 async function cmdScore(args: string[]) {
+  if (printHelp(args, "score", ["ranked project scores", "--all     include inactive projects", "--json    JSON output"])) return;
   const state = await loadState(hasFlag(args, "--all"));
   if (hasFlag(args, "--json")) {
     console.log(JSON.stringify(state.scored.map(scoredJson), null, 2));
     return;
   }
   console.log(bold("\n  #  project                score   age    dirty        cost"));
-  state.scored.forEach((p, i) => console.log(renderScoreRow(p, i + 1)));
+  const nameWidth = Math.min(30, Math.max(4, ...state.scored.map((p) => p.name.length)));
+  const maxDigits = String(state.scored.length).length;
+  state.scored.forEach((p, i) => console.log(renderScoreRow(p, i + 1, nameWidth, maxDigits)));
   console.log("");
 }
 
 async function cmdUsage(args: string[]) {
+  if (printHelp(args, "usage", ["tokens + cost from Claude Code logs", "--project <name>  filter by project", "--json           JSON output"])) return;
   const cfg = loadConfig();
   const usage = await parseUsage(cfg.paths.claudeDir);
-  const projFlag = args[args.indexOf("--project") + 1];
+  const projFlag = argVal(args, "--project");
   const rows = [...usage.byCwd.values()]
     .filter((u) => (hasFlag(args, "--project") ? u.name === projFlag : true))
     .sort((a, b) => b.costUsd - a.costUsd);
@@ -362,6 +383,7 @@ function parseSet(args: string[]): { week?: number; fiveH?: number } {
 }
 
 async function cmdQuota(args: string[]) {
+  if (printHelp(args, "quota", ["estimated 5h + weekly burn vs caps", "--set week=<pct> 5h=<pct>  calibrate from /usage", "--json                    JSON output"])) return;
   const cfg = loadConfig();
   const usage = await parseUsage(cfg.paths.claudeDir);
   const sub = cfg.subscriptions[0];
@@ -404,6 +426,7 @@ async function cmdQuota(args: string[]) {
 }
 
 async function cmdSprint(args: string[]) {
+  if (printHelp(args, "sprint", ["routed multi-project itinerary (anchor → hops → return)", "--hours <N>  cap the route by wall-clock hours", "--all        include inactive projects", "--json       JSON output"])) return;
   const state = await loadState(hasFlag(args, "--all"));
   const hoursArg = argVal(args, "--hours");
   const hours = hoursArg != null && !Number.isNaN(Number(hoursArg)) ? Number(hoursArg) : undefined;
@@ -469,7 +492,7 @@ async function cmdSwitch(args: string[]) {
 
   const to = state.scored.find((p) => p.name === target);
   if (!to) {
-    console.error(`stasis: no scored project named "${target}" (try \`stasis score --all\`)`);
+    console.error(`stasis: error: no scored project named "${target}" (try \`stasis score --all\`)`);
     process.exit(1);
   }
 
@@ -498,8 +521,16 @@ async function cmdSwitch(args: string[]) {
 }
 
 async function cmdAnalyze(args: string[]) {
+  if (printHelp(args, "analyze", [
+    "AI reads each project → structured ROI / blocker / next action",
+    "--fast         use smaller model (faster, less accurate)",
+    "--project <n>  analyze a single project",
+    "--all          analyze every repo (not just active)",
+    "--no-global    skip portfolio-level analysis",
+    "--json         JSON output",
+  ])) return;
   const cfg = loadConfig();
-  const projFlag = hasFlag(args, "--project") ? args[args.indexOf("--project") + 1] : undefined;
+  const projFlag = argVal(args, "--project");
   const useFast = hasFlag(args, "--fast");
   if (useFast) cfg.analyze.model = cfg.analyze.fastModel;
 
@@ -526,7 +557,7 @@ async function cmdAnalyze(args: string[]) {
     );
 
   if (chosen.length === 0) {
-    console.error("stasis: no matching projects to analyze.");
+    console.error("stasis: error: no matching projects to analyze.");
     process.exit(1);
   }
 
@@ -539,11 +570,11 @@ async function cmdAnalyze(args: string[]) {
     };
   });
 
-  console.error(
-    dim(
-      `\nAnalyzing ${targets.length} project(s) via ${provider.label} — ${cfg.analyze.maxRounds} round(s) each. This runs locally; give it a moment.\n`,
-    ),
-  );
+      console.error(
+        dim(
+          `\n  Decide honestly: did the bet hold?\n  stasis focus review --verdict kept, killed, or pivot --note "what happened"\n`,
+        ),
+      );
 
   // Merge with any prior analysis so a targeted run doesn't wipe the rest.
   const prior = loadAnalysis();
@@ -602,14 +633,14 @@ function renderFocusStatus(st: FocusStatus): string {
   lines.push(`  🎯 ${bold(f.project)}  ${when}`);
   lines.push(`  bet:  ${f.bet}`);
   lines.push(`  kill: ${dim(f.kill)}`);
-  lines.push(`  fidelity: ${fidStr}${fid != null && fid < 0.6 ? red("  ⚠ scattering") : ""}`);
+  lines.push(`  on-target: ${fidStr}${fid != null && fid < 0.6 ? red("  ⚠ going off track") : ""}`);
   if (st.leaks.length && (fid == null || fid < 0.8)) {
     const leak = st.leaks.map((l) => `${l.name} ${fmtTokens(l.tokens)}`).join(", ");
-    lines.push(dim(`  attention leaking to: ${leak}`));
+    lines.push(dim(`  off-focus work: ${leak}`));
   }
   if (st.overdue)
     lines.push(
-      `  ${bold("→ verdict time:")} stasis focus review --verdict kept|killed|pivot --note "…"`,
+      `  ${bold("→ verdict time:")} stasis focus review --verdict kept, killed, or pivot --note "…"`,
     );
   return lines.join("\n");
 }
@@ -648,6 +679,13 @@ function stopDaemon(): void {
 }
 
 async function cmdWatch(args: string[]) {
+  if (printHelp(args, "watch", [
+    "background monitor — detects scatter, quota, overdue, hot projects",
+    "--daemon     fork to background",
+    "--stop       kill the daemon",
+    "--status     show shadow state + pending advice",
+    "--once       single check, print advice, exit",
+  ])) return;
   const cfg = loadConfig();
 
   if (hasFlag(args, "--stop")) return stopDaemon();
@@ -737,6 +775,9 @@ async function cmdWatch(args: string[]) {
             console.log(dim(`    ${line}`));
           }
         }
+      } else if (tick % 6 === 0) {
+        // Heartbeat every ~30s (6 × 5s intervals) so the terminal doesn't look frozen
+        process.stderr.write(dim("."));
       }
     } catch (err) {
       console.error(red(`  [${new Date().toISOString().slice(11, 19)}] error: ${(err as Error).message}`));
@@ -751,6 +792,13 @@ async function cmdWatch(args: string[]) {
 }
 
 async function cmdFocus(args: string[]) {
+  if (printHelp(args, "focus", [
+    "your active commitment + fidelity (anti-scatter)",
+    "set <project> --for 2w --bet <bet> --kill <kill>    commit to a bet",
+    "review --verdict kept|killed|pivot --note <text>     close the current bet",
+    "clear       abandon focus without recording a verdict",
+    "--json      JSON output",
+  ])) return;
   const sub = args[0] && !args[0].startsWith("-") ? args[0] : "status";
   const state = loadFocus();
   const cfg = loadConfig();
@@ -763,7 +811,7 @@ async function cmdFocus(args: string[]) {
     }
     const repos = scanRepos(cfg.paths.projectsDir);
     if (!repos.some((r) => r.name === project)) {
-      console.error(`stasis: no project "${project}" under ${cfg.paths.projectsDir}`);
+      console.error(`stasis: error: no project "${project}" under ${cfg.paths.projectsDir}`);
       process.exit(1);
     }
     if (state.active && state.active.project !== project) {
@@ -789,7 +837,7 @@ async function cmdFocus(args: string[]) {
 
   if (sub === "review") {
     if (!state.active) {
-      console.error("stasis: no active focus to review.");
+      console.error("stasis: error: no active focus to review.");
       process.exit(1);
     }
     const verdict = (argVal(args, "--verdict") ?? "").toLowerCase();
@@ -928,7 +976,7 @@ async function cmdUnsnooze(args: string[]) {
     process.exit(1);
   }
   if (!cfg.overrides[project]?.ignore) {
-    console.error(dim(`  ${project} is not snoozed`));
+    console.error(`stasis: error: "${project}" is not snoozed`);
     process.exit(1);
   }
   delete cfg.overrides[project];
@@ -1020,7 +1068,7 @@ async function main() {
         console.log(HELP);
         break;
       default:
-        console.error(`stasis: unknown command "${cmd}"\n`);
+        console.error(`stasis: error: unknown command "${cmd}"\n`);
         console.log(HELP);
         process.exit(1);
     }
