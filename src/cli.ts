@@ -164,7 +164,7 @@ function renderScoreRow(p: ScoredProject, rank: number, nameWidth: number, maxDi
   const nameStr = snoozed ? `${dim(pad(p.name, nameWidth))}${dim(" snoozed")}` : bold(pad(p.name, nameWidth));
   const days = p.signals.daysSinceCommit;
   const age = days == null ? "—" : days === 0 ? "today" : `${days}d`;
-  const dirty = p.signals.dirtyCount > 0 ? yellow(`${p.signals.dirtyCount}`) + dim("✎") : dim("clean");
+  const dirty = p.signals.dirtyCount > 0 ? yellow(`${p.signals.dirtyCount}`) + dim(" dirty") : dim("clean");
   const cost = dim(padl(p.signals.costUsd > 0 ? fmtUsd(p.signals.costUsd) : "—", 9));
   const tags = p.signals.vault?.tags.slice(0, 2).join(",");
   const tagHint = tags ? dim("  ◆ " + tags) : "";
@@ -922,9 +922,8 @@ function toJson(state: State) {
 
 async function cmdSnooze(args: string[]) {
   const cfg = loadConfig();
-  const sub = args[0] && !args[0].startsWith("-") ? args[0] : null;
 
-  if (sub === "list" || hasFlag(args, "--list")) {
+  if (hasFlag(args, "--list")) {
     const entries = Object.entries(cfg.overrides) as [string, ProjectOverride][];
     const snoozed = entries
       .filter(([, o]) => o.ignore)
@@ -946,11 +945,11 @@ async function cmdSnooze(args: string[]) {
     return;
   }
 
-  if (!sub) {
+  const project = args.find((a) => !a.startsWith("-"));
+  if (!project) {
     console.error("stasis: usage: stasis snooze <project>");
     process.exit(1);
   }
-  const project: string = sub;
   const repos = scanRepos(cfg.paths.projectsDir);
   if (!repos.some((r) => r.name === project)) {
     const vault = loadVault(cfg.paths.vaultDir);
@@ -964,7 +963,7 @@ async function cmdSnooze(args: string[]) {
 
   cfg.overrides[project] = { ...cfg.overrides[project], ignore: true };
   saveConfig(cfg);
-  console.log(bold(`\n  😴 ${project} snoozed`) + dim("  (scored but excluded from routing)"));
+  console.log(bold(`\n  ${project} snoozed`) + dim("  (scored but excluded from routing)"));
   console.log(dim(`  unsnooze: stasis unsnooze ${project}\n`));
 }
 
@@ -996,7 +995,7 @@ const HELP = `stasis — multi-project scoring & sprint orchestrator
   stasis analyze [--fast]    AI reads each project → structured ROI/%done/blocker
   stasis focus               your active commitment + fidelity (anti-scatter)
   stasis focus set <p> --for 2w --bet "…" --kill "…"
-  stasis focus review --verdict kept|killed|pivot --note "…"
+  stasis focus review --verdict kept, killed, or pivot --note "…"
   stasis snooze <project>    exclude from routing (still scored; set aside for later)
   stasis snooze --list       show snoozed projects
   stasis snooze --clear      unsnooze all projects
