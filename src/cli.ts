@@ -795,7 +795,7 @@ async function cmdFocus(args: string[]) {
   if (printHelp(args, "focus", [
     "your active commitment + fidelity (anti-scatter)",
     "set <project> --for 2w --bet <bet> --kill <kill>    commit to a bet",
-    "review --verdict kept|killed|pivot --note <text>     close the current bet",
+    "review --verdict kept, killed, or pivot --note <text>     close the current bet",
     "clear       abandon focus without recording a verdict",
     "--json      JSON output",
   ])) return;
@@ -849,7 +849,7 @@ async function cmdFocus(args: string[]) {
       console.log(renderFocusStatus(st));
       console.log(
         dim(
-          `\n  Decide honestly: did the bet hold?\n  stasis focus review --verdict kept|killed|pivot --note "what happened"\n`,
+          `\n  Decide honestly: did the bet hold?\n  stasis focus review --verdict kept, killed, or pivot --note "what happened"\n`,
         ),
       );
       return;
