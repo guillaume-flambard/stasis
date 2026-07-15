@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { MOCK } from "./mock";
 import "./App.css";
 
 // ---- minimal shapes of the stasis --json output (only fields the UI reads) ----
@@ -32,12 +33,7 @@ interface Route {
   note: string;
 }
 interface SwitchOpt { name: string; roi: number; score: number; reason: string }
-interface Sprint {
-  gate: string;
-  route: Route;
-  why: string[];
-  switchOptions: SwitchOpt[];
-}
+interface Sprint { gate: string; route: Route; why: string[]; switchOptions: SwitchOpt[] }
 interface FocusStatus {
   focus: { project: string; bet: string; kill: string; horizonDays: number };
   daysElapsed: number;
@@ -56,14 +52,24 @@ interface Quota {
   gate: "green" | "yellow" | "red";
 }
 
+const IS_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
 async function call<T>(command: string): Promise<T> {
+  if (!IS_TAURI) {
+    await new Promise((r) => setTimeout(r, 60)); // mimic latency
+    return MOCK[command] as T;
+  }
   const raw = await invoke<string>("run_stasis", { command });
   return JSON.parse(raw) as T;
 }
 
 const fmtK = (n: number) =>
   n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n);
-const kindMark: Record<Block["kind"], string> = { anchor: "▶", hop: "→", return: "↩" };
+const KIND: Record<Block["kind"], { mark: string; label: string }> = {
+  anchor: { mark: "◆", label: "anchor" },
+  hop: { mark: "→", label: "hop" },
+  return: { mark: "↩", label: "return" },
+};
 const REFRESH_MS = 5000;
 
 export default function App() {
@@ -73,6 +79,7 @@ export default function App() {
   const [scores, setScores] = useState<Scored[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [tick, setTick] = useState(0);
   const [live, setLive] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -83,12 +90,8 @@ export default function App() {
         call<Quota[]>("quota"),
         call<Scored[]>("score"),
       ]);
-      setSprint(sp);
-      setFocus(fo.active);
-      setQuota(qu);
-      setScores(sc);
-      setError(null);
-      setUpdatedAt(new Date());
+      setSprint(sp); setFocus(fo.active); setQuota(qu); setScores(sc);
+      setError(null); setUpdatedAt(new Date()); setTick((t) => t + 1);
     } catch (e) {
       setError(String(e));
     }
@@ -101,164 +104,225 @@ export default function App() {
     return () => clearInterval(id);
   }, [refresh, live]);
 
+  const loading = !updatedAt && !error;
+
   return (
     <main className="app">
-      <header className="topbar">
-        <div className="brand">🧭 stasis <span className="sub">live</span></div>
-        <div className="controls">
-          <span className={`dot ${live ? "on" : "off"}`} />
-          <button onClick={() => setLive((v) => !v)}>{live ? "Live" : "Paused"}</button>
-          <button onClick={refresh}>Refresh</button>
-          <span className="ts">{updatedAt ? updatedAt.toLocaleTimeString() : "—"}</span>
+      <header className="bar">
+        <div className="brand">
+          <span className="glyph">◱</span> stasis
+          <span className="tag">{IS_TAURI ? "live" : "preview"}</span>
         </div>
-      </header>
-
-      {error && <div className="error">⚠ {error}</div>}
-
-      <div className="grid">
-        {/* FOCUS */}
-        <section className="card focus">
-          <h2>Focus</h2>
-          {focus ? (
-            <>
-              <div className="focus-name">🎯 {focus.focus.project}
-                <span className="muted"> · day {focus.daysElapsed}/{focus.focus.horizonDays}
-                  {focus.overdue ? <b className="red"> · OVERDUE</b> : ` · ${focus.daysLeft}d left`}</span>
-              </div>
-              <div className="bet">{focus.focus.bet}</div>
-              <div className="fidelity">
-                {!focus.traceable
-                  ? <span className="muted">not token-traced (non-code bet)</span>
-                  : focus.fidelity == null
-                    ? <span className="muted">no activity yet</span>
-                    : <span className={focus.fidelity >= 0.6 ? "green" : "red"}>
-                        {Math.round(focus.fidelity * 100)}% on target
-                        {focus.fidelity < 0.6 ? " ⚠ scattering" : ""}
-                      </span>}
-              </div>
-            </>
-          ) : (
-            <div className="muted">No active commitment. Decide your bet.</div>
-          )}
-        </section>
-
-        {/* QUOTA */}
-        <section className="card quota">
-          <h2>Quota</h2>
-          {quota.length === 0 && <div className="muted">no subscriptions</div>}
+        <div className="bar-quota">
           {quota.map((q) => (
-            <div key={q.subscription} className="qrow">
+            <div className="qchip" key={q.subscription} title={q.subscription}>
               <span className={`gate ${q.gate}`} />
-              <span className="qname">{q.subscription}</span>
               {q.calibrated ? (
-                <span className="qbars">
-                  <Bar label="5h" pct={q.rolling5h.pct} />
-                  <Bar label="wk" pct={q.weekly.pct} />
-                  <span className="muted">reset {q.resetInDays}d</span>
-                </span>
+                <>
+                  <Meter label="5h" pct={q.rolling5h.pct} />
+                  <Meter label="wk" pct={q.weekly.pct} />
+                  <span className="reset">↻{q.resetInDays}d</span>
+                </>
               ) : (
-                <span className="muted">uncalibrated · {fmtK(q.weekly.tokens)} tok/wk</span>
+                <span className="muted">uncalibrated</span>
               )}
             </div>
           ))}
-        </section>
+        </div>
+        <div className="bar-ctl">
+          <button className={`live ${live ? "on" : ""}`} onClick={() => setLive((v) => !v)}>
+            <span key={tick} className="pulse" /> {live ? "Live" : "Paused"}
+          </button>
+          <button className="ghost" onClick={refresh}>↻</button>
+          <span className="stamp">{updatedAt ? updatedAt.toLocaleTimeString() : "—"}</span>
+        </div>
+      </header>
 
-        {/* ROUTE */}
-        <section className="card route">
-          <h2>Today's route {sprint && <span className="mode">{sprint.route.mode}</span>}</h2>
-          {sprint ? (
-            <>
-              <div className="muted budget">
-                budget {fmtK(sprint.route.usedTokens)}
-                {sprint.route.budgetTokens != null && `/${fmtK(sprint.route.budgetTokens)}`} tok
-                · ~{sprint.route.totalMinutes}m · anchor {sprint.route.anchor ?? "—"}
+      {error && <div className="error"><b>error</b> {error}</div>}
+
+      {/* FOCUS BAND */}
+      <section className={`focus ${focus?.overdue ? "overdue" : ""}`}>
+        {loading ? (
+          <Skeleton lines={2} />
+        ) : focus ? (
+          <>
+            <div className="focus-main">
+              <div className="focus-eyebrow">committed focus</div>
+              <div className="focus-name">{focus.focus.project}</div>
+              <div className="focus-bet">{focus.focus.bet}</div>
+            </div>
+            <div className="focus-side">
+              <div className="focus-day">
+                <span className="big">{focus.daysElapsed}</span>
+                <span className="muted">/{focus.focus.horizonDays}d</span>
+                {focus.overdue
+                  ? <span className="badge crit">overdue</span>
+                  : <span className="badge">{focus.daysLeft}d left</span>}
               </div>
-              <ol className="blocks">
+              <Fidelity f={focus} />
+            </div>
+          </>
+        ) : (
+          <div className="empty">No active commitment — <span className="muted">decide your bet in the CLI.</span></div>
+        )}
+      </section>
+
+      <div className="cols">
+        {/* ROUTE */}
+        <section className="panel route">
+          <div className="phead">
+            <h2>Today's route</h2>
+            {sprint && <span className={`mode ${sprint.gate}`}>{sprint.route.mode}</span>}
+          </div>
+          {loading ? <Skeleton lines={4} /> : sprint ? (
+            <>
+              <BudgetBar r={sprint.route} />
+              <ol className="timeline">
                 {sprint.route.blocks.map((b, i) => (
-                  <li key={i} className={`block ${b.kind}`}>
-                    <div className="bhead"><span className="mark">{kindMark[b.kind]}</span>
-                      <b>{b.project}</b> <span className="task">{b.task}</span></div>
-                    <div className="bmeta muted">
-                      ~{fmtK(b.estTokens)} · {b.estMinutes}m · stop: {b.stop}
+                  <li key={i} className={`step ${b.kind}`} style={{ animationDelay: `${i * 45}ms` }}>
+                    <span className="node">{KIND[b.kind].mark}</span>
+                    <div className="step-body">
+                      <div className="step-top">
+                        <span className="proj">{b.project}</span>
+                        <span className="kindtag">{KIND[b.kind].label}</span>
+                        <span className="est">~{fmtK(b.estTokens)} · {b.estMinutes}m</span>
+                      </div>
+                      <div className="task">{b.task}</div>
+                      <div className="stop"><span className="arrow">stop</span> {b.stop}</div>
                     </div>
                   </li>
                 ))}
               </ol>
               {sprint.route.deferred.length > 0 && (
                 <div className="deferred">
-                  <div className="muted line">── budget line ──</div>
+                  <div className="dline"><span>below the line</span></div>
                   {sprint.route.deferred.map((d) => (
-                    <div key={d.project} className="drow muted">
-                      {d.project} · ROI {d.roi.toFixed(1)} · {d.reason}
+                    <div key={d.project} className="drow">
+                      <span className="proj">{d.project}</span>
+                      <span className="roi">roi {d.roi.toFixed(1)}</span>
+                      <span className="muted">{d.reason}</span>
                     </div>
                   ))}
                 </div>
               )}
-              <div className="muted note">{sprint.route.note}</div>
             </>
-          ) : (
-            <div className="muted">loading…</div>
-          )}
+          ) : null}
         </section>
 
-        {/* SWITCH OPTIONS */}
-        <section className="card switch">
-          <h2>Switch by ROI</h2>
-          {sprint?.switchOptions.length ? (
+        {/* SWITCH */}
+        <section className="panel switch">
+          <div className="phead"><h2>Switch by ROI</h2></div>
+          {loading ? <Skeleton lines={4} /> : (
             <ul className="switches">
-              {sprint.switchOptions.map((o) => (
-                <li key={o.name}>
-                  <b>{o.name}</b>
-                  <span className="roi">ROI {o.roi.toFixed(1)}</span>
-                  <span className="muted">{o.reason}</span>
+              {sprint?.switchOptions.map((o, i) => (
+                <li key={o.name} style={{ animationDelay: `${i * 45}ms` }}>
+                  <span className="proj">{o.name}</span>
+                  <RoiPip roi={o.roi} />
+                  <span className="reason muted">{o.reason}</span>
                 </li>
               ))}
             </ul>
-          ) : (
-            <div className="muted">—</div>
           )}
         </section>
+      </div>
 
-        {/* SCORES */}
-        <section className="card scores">
-          <h2>Scores <span className="muted">({scores.length})</span></h2>
+      {/* SCORES */}
+      <section className="panel scores">
+        <div className="phead">
+          <h2>Scores</h2>
+          <span className="count">{scores.length}</span>
+        </div>
+        {loading ? <Skeleton lines={5} /> : (
           <table>
             <thead>
-              <tr><th>#</th><th>project</th><th>score</th><th>roi</th><th>prox</th><th>mom</th><th>done</th><th>cost</th></tr>
+              <tr>
+                <th className="r">#</th><th className="l">project</th>
+                <th>score</th><th>roi</th><th>prox</th><th>mom</th><th>done</th><th>cost</th>
+              </tr>
             </thead>
             <tbody>
-              {scores.slice(0, 15).map((p, i) => (
+              {scores.slice(0, 12).map((p, i) => (
                 <tr key={p.name}>
-                  <td className="muted">{i + 1}</td>
-                  <td className="pname">{p.name}</td>
-                  <td><Score v={p.score} /></td>
+                  <td className="r idx">{i + 1}</td>
+                  <td className="l proj">{p.name}</td>
+                  <td className="score">{p.score.toFixed(1)}</td>
                   <td>{(p.factors.roi * 10).toFixed(1)}</td>
                   <td>{(p.factors.proximity * 10).toFixed(1)}</td>
                   <td>{(p.factors.momentum * 10).toFixed(1)}</td>
-                  <td>{p.paperclip ? `${p.paperclip.done}/${p.paperclip.total}` : "—"}</td>
-                  <td className="muted">{p.costUsd ? "$" + p.costUsd.toFixed(0) : "—"}</td>
+                  <td>{p.paperclip ? <span className="pc">{p.paperclip.done}/{p.paperclip.total}</span> : <span className="dash">·</span>}</td>
+                  <td className="muted">{p.costUsd ? "$" + Math.round(p.costUsd) : <span className="dash">·</span>}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </section>
-      </div>
+        )}
+      </section>
     </main>
   );
 }
 
-function Bar({ label, pct }: { label: string; pct: number | null }) {
+function Meter({ label, pct }: { label: string; pct: number | null }) {
   const p = pct == null ? 0 : Math.round(pct * 100);
-  const tone = p >= 90 ? "red" : p >= 60 ? "yellow" : "green";
+  const tone = p >= 90 ? "crit" : p >= 60 ? "warn" : "ok";
   return (
-    <span className="bar">
-      <span className="barlabel">{label}</span>
-      <span className="bartrack"><span className={`barfill ${tone}`} style={{ width: `${p}%` }} /></span>
-      <span className="barpct">{pct == null ? "—" : p + "%"}</span>
+    <span className="meter" title={`${label} ${p}%`}>
+      <span className="meter-label">{label}</span>
+      <span className="meter-track"><span className={`meter-fill ${tone}`} style={{ width: `${p}%` }} /></span>
+      <span className="meter-pct">{pct == null ? "—" : p}</span>
     </span>
   );
 }
 
-function Score({ v }: { v: number }) {
-  return <b className="scoreval">{v.toFixed(1)}</b>;
+function BudgetBar({ r }: { r: Route }) {
+  const cap = r.budgetTokens;
+  const pct = cap ? Math.min(100, Math.round((r.usedTokens / cap) * 100)) : 0;
+  return (
+    <div className="budget">
+      <div className="budget-row">
+        <span className="anchor-chip"><span className="dot" /> {r.anchor ?? "—"}</span>
+        <span className="muted budget-meta">
+          {fmtK(r.usedTokens)}{cap != null && ` / ${fmtK(cap)}`} tok · ~{r.totalMinutes}m
+        </span>
+      </div>
+      {cap != null && (
+        <span className="budget-track"><span className="budget-fill" style={{ width: `${pct}%` }} /></span>
+      )}
+    </div>
+  );
+}
+
+function Fidelity({ f }: { f: FocusStatus }) {
+  if (!f.traceable)
+    return <div className="fid"><span className="fid-label muted">not token-traced</span><span className="muted small">non-code bet · judged at verdict</span></div>;
+  if (f.fidelity == null)
+    return <div className="fid"><span className="fid-label muted">no activity yet</span></div>;
+  const p = Math.round(f.fidelity * 100);
+  const tone = f.fidelity >= 0.6 ? "ok" : "crit";
+  return (
+    <div className="fid">
+      <div className="fid-top">
+        <span className={`fid-val ${tone}`}>{p}%</span>
+        <span className="muted small">on target{f.fidelity < 0.6 ? " · scattering" : ""}</span>
+      </div>
+      <span className="fid-track"><span className={`fid-fill ${tone}`} style={{ width: `${p}%` }} /></span>
+      {f.leaks.length > 0 && (
+        <div className="leaks muted small">↳ {f.leaks.map((l) => `${l.name} ${fmtK(l.tokens)}`).join(" · ")}</div>
+      )}
+    </div>
+  );
+}
+
+function RoiPip({ roi }: { roi: number }) {
+  const tone = roi >= 7 ? "hi" : roi >= 3 ? "mid" : "lo";
+  return <span className={`roipip ${tone}`}>roi <b>{roi.toFixed(1)}</b></span>;
+}
+
+function Skeleton({ lines }: { lines: number }) {
+  return (
+    <div className="skel">
+      {Array.from({ length: lines }).map((_, i) => (
+        <span key={i} className="skel-line" style={{ width: `${90 - i * 12}%` }} />
+      ))}
+    </div>
+  );
 }
