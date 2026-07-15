@@ -26,10 +26,12 @@ function urgencyFactor(s: ProjectSignals, cfg: Config): number {
 }
 
 /**
- * Proximity-to-done. AI analysis gives a real %done judgment; without it we fall
- * back to a git proxy (unpushed commits + mid-work signal a checkpoint).
+ * Proximity-to-done. Precedence: Paperclip's human-tracked done/total (ground
+ * truth) > the AI's %done judgment > a git proxy (unpushed commits + mid-work
+ * signal a checkpoint).
  */
 function proximityFactor(s: ProjectSignals): number {
+  if (s.paperclip) return clamp01(s.paperclip.percentDone);
   if (s.analysis) return clamp01(s.analysis.percentDone / 100);
   const aheadTerm = s.aheadCount > 0 ? 0.55 : 0;
   const dirtyTerm = s.dirtyCount > 0 && s.dirtyCount <= 30 ? 0.35 : 0;

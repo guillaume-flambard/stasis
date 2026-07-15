@@ -58,6 +58,7 @@ export const DEFAULT_CONFIG: Config = {
     alignment: 0.08,
   },
   overrides: {},
+  paperclip: { enabled: false, companyMap: {} },
 };
 
 /** Deep-ish merge: user config wins, defaults fill gaps (one level for nested objects). */
@@ -71,6 +72,7 @@ function mergeConfig(base: Config, user: Partial<Config>): Config {
     subscriptions: user.subscriptions ?? base.subscriptions,
     weights: { ...base.weights, ...(user.weights ?? {}) },
     overrides: user.overrides ?? base.overrides,
+    paperclip: { ...base.paperclip, ...(user.paperclip ?? {}) },
   };
 }
 

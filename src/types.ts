@@ -78,6 +78,16 @@ export interface Config {
   subscriptions: Subscription[];
   weights: Weights;
   overrides: Record<string, ProjectOverride>;
+  /** Paperclip (self-hosted issue tracker) integration; skipped if server down. */
+  paperclip: PaperclipConfig;
+}
+
+export interface PaperclipConfig {
+  /** Off by default — set true once the CLI (`paperclipai`) + server are set up. */
+  enabled: boolean;
+  /** Map a Paperclip company name OR issue-prefix to a ~/projects dir name, for
+   *  cases auto-normalization can't resolve (e.g. "Largo IA" → "largo-ai"). */
+  companyMap: Record<string, string>;
 }
 
 /** Raw signals collected per project before scoring. */
@@ -100,6 +110,13 @@ export interface ProjectSignals {
   mem?: {
     obsRecent: number;
     daysSinceObs: number | null;
+  };
+  /** Paperclip issue-tracker completion: the ground-truth %done for proximity. */
+  paperclip?: {
+    percentDone: number; // 0..1 (done / non-cancelled total)
+    done: number;
+    total: number;
+    open: number;
   };
   /** Vault-derived hints (used only where no explicit override exists). */
   vault?: {

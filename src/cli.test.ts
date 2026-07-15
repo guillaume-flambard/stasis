@@ -18,6 +18,7 @@ const MINIMAL_CFG: Config = {
   subscriptions: [{ name: "test", weeklyTokenCap: null, rolling5hTokenCap: null, resetDay: "Monday" }],
   weights: { roi: 0.2, urgency: 0.1, proximity: 0.15, momentum: 0.15, effort: 0.1, alignment: 0.08, engagement: 0.22 },
   overrides: {},
+  paperclip: { enabled: false, companyMap: {} },
 };
 
 describe("buildSignals", () => {

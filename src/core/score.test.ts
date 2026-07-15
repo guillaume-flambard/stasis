@@ -4,7 +4,7 @@ import type { ProjectSignals, Config } from "../types.ts";
 
 function cfg(overrides?: Partial<Config>): Config {
   return {
-    paths: { projectsDir: "/p", vaultDir: "/v", claudeDir: "/c" },
+    paths: { projectsDir: "/p", vaultDir: "/v", claudeDir: "/c", claudeMemDb: "/c/mem.db" },
     analyze: { provider: "ollama", model: "m", fastModel: "fm", baseUrl: "http://localhost:11434", apiKey: null, maxRounds: 2, numCtx: 8192, temperature: 0.2 },
     shadow: { checkInterval: 300, notifyUrgent: true, hotProjectThreshold: 15000 },
     northStarDeadline: "2026-12-31",
@@ -12,6 +12,7 @@ function cfg(overrides?: Partial<Config>): Config {
     subscriptions: [{ name: "max", weeklyTokenCap: null, rolling5hTokenCap: null, resetDay: "Monday" }],
     weights: { roi: 0.2, urgency: 0.1, proximity: 0.15, momentum: 0.15, effort: 0.1, alignment: 0.08, engagement: 0.22 },
     overrides: {},
+    paperclip: { enabled: false, companyMap: {} },
     ...overrides,
   };
 }
@@ -101,6 +102,18 @@ describe("computeFactors", () => {
   test("no git signal gives zero proximity", () => {
     const s = computeFactors(signals({ isGit: false }), cfg());
     expect(s.proximity).toBe(0);
+  });
+
+  test("Paperclip done/total outranks AI analysis for proximity", () => {
+    // AI says 30% done, Paperclip's human-tracked issues say 80% → Paperclip wins.
+    const s = computeFactors(
+      signals({
+        analysis: { roi: 5, percentDone: 30, blocker: "x", nextAction: "y", confidence: 0.8 },
+        paperclip: { percentDone: 0.8, done: 8, total: 10, open: 2 },
+      }),
+      cfg(),
+    );
+    expect(s.proximity).toBeCloseTo(0.8, 5);
   });
 
   test("momentum from git commit recency", () => {

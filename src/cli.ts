@@ -6,6 +6,7 @@ import { scanRepos, type GitInfo } from "./adapters/git.ts";
 import { parseUsage, type UsageIndex } from "./adapters/usage.ts";
 import { loadVault, type VaultInfo } from "./adapters/vault.ts";
 import { loadClaudeMem, type MemInfo } from "./adapters/claudemem.ts";
+import { loadPaperclip, type PaperclipInfo } from "./adapters/paperclip.ts";
 import { runAnalysis, type AnalyzeTarget, type AnalysisResult } from "./analyze/analyze.ts";
 import { makeProvider } from "./analyze/provider.ts";
 import { loadAnalysis, saveAnalysis } from "./analyze/store.ts";
@@ -78,6 +79,7 @@ export function buildSignals(
   analysis: AnalysisResult | null,
   cfg: Config,
   mem: Map<string, MemInfo> = new Map(),
+  paperclip: Map<string, PaperclipInfo> = new Map(),
 ): ProjectSignals[] {
   const byName = new Map<string, { outputTokens: number; recentOutputTokens: number; costUsd: number }>();
   for (const [cwd, pu] of usage.byCwd) {
@@ -94,6 +96,7 @@ export function buildSignals(
     const u = byName.get(g.name) ?? { outputTokens: 0, recentOutputTokens: 0, costUsd: 0 };
     const v = vault.get(g.name.toLowerCase());
     const m = mem.get(g.name.toLowerCase());
+    const pc = paperclip.get(g.name.toLowerCase());
     const aj = analysis?.projects[g.name];
     return {
       name: g.name,
@@ -109,6 +112,9 @@ export function buildSignals(
       costUsd: u.costUsd,
       override: cfg.overrides[g.name] ?? {},
       mem: m ? { obsRecent: m.obsRecent, daysSinceObs: m.daysSinceObs } : undefined,
+      paperclip: pc
+        ? { percentDone: pc.percentDone, done: pc.done, total: pc.total, open: pc.open }
+        : undefined,
       vault: v
         ? { title: v.title, status: v.status, tags: v.tags, roi: v.roi, alignment: v.alignment }
         : undefined,
@@ -140,13 +146,16 @@ function isCodeProject(name: string | null | undefined, cfg: Config): boolean {
 
 async function loadState(showAll: boolean): Promise<State> {
   const cfg = loadConfig();
-  const [repos, usage, vault, mem] = await Promise.all([
-    Promise.resolve(scanRepos(cfg.paths.projectsDir)),
+  const repos = scanRepos(cfg.paths.projectsDir);
+  const [usage, vault, mem, paperclip] = await Promise.all([
     parseUsage(cfg.paths.claudeDir),
     Promise.resolve(loadVault(cfg.paths.vaultDir)),
     Promise.resolve(loadClaudeMem(cfg.paths.claudeMemDb, cfg.activeWindowDays)),
+    loadPaperclip(repos.map((r) => r.name), cfg.paperclip),
   ]);
-  let signals = buildSignals(repos, usage, vault, loadAnalysis(), cfg, mem).filter((s) => s.isGit);
+  let signals = buildSignals(repos, usage, vault, loadAnalysis(), cfg, mem, paperclip).filter(
+    (s) => s.isGit,
+  );
   if (!showAll) signals = signals.filter((s) => isActive(s, cfg));
   const scored = scoreProjects(signals, cfg);
   const quota = computeQuota(cfg.subscriptions, usage.recentEvents, loadCalib());
@@ -955,6 +964,7 @@ function scoredJson(p: ScoredProject) {
     aheadCount: p.signals.aheadCount,
     costUsd: Number(p.signals.costUsd.toFixed(2)),
     mem: p.signals.mem ?? null,
+    paperclip: p.signals.paperclip ?? null,
     vault: p.signals.vault
       ? { note: p.signals.vault.title, status: p.signals.vault.status, tags: p.signals.vault.tags }
       : null,
