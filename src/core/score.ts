@@ -36,10 +36,19 @@ function proximityFactor(s: ProjectSignals): number {
   return clamp01(aheadTerm + dirtyTerm);
 }
 
-/** Momentum: recent commits = warm, cheap to resume. */
+/**
+ * Momentum: how warm the project is, i.e. how cheap to resume. Recency comes from
+ * two independent sources — git commits AND claude-mem observations. A project you
+ * poured a day of thinking into (logged as observations) but haven't committed yet
+ * still reads warm; the most recent of the two wins.
+ */
 function momentumFactor(s: ProjectSignals, cfg: Config): number {
-  if (s.daysSinceCommit == null) return 0;
-  return clamp01(1 - s.daysSinceCommit / cfg.activeWindowDays);
+  const days = [s.daysSinceCommit, s.mem?.daysSinceObs ?? null].filter(
+    (d): d is number => d != null,
+  );
+  if (days.length === 0) return 0;
+  const recent = Math.min(...days);
+  return clamp01(1 - recent / cfg.activeWindowDays);
 }
 
 /** Effort-inverse: large uncommitted sprawl = expensive to finish → lower. */

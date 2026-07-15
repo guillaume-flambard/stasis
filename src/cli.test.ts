@@ -10,7 +10,7 @@ import type { SprintPlan } from "./core/sprint.ts";
 import type { QuotaStatus } from "./core/quota.ts";
 
 const MINIMAL_CFG: Config = {
-  paths: { projectsDir: "/p", vaultDir: "/v", claudeDir: "/c" },
+  paths: { projectsDir: "/p", vaultDir: "/v", claudeDir: "/c", claudeMemDb: "/c/mem.db" },
   analyze: { provider: "ollama", model: "m", fastModel: "fm", baseUrl: "http://localhost:11434", apiKey: null, maxRounds: 2, numCtx: 8192, temperature: 0.2 },
   shadow: { checkInterval: 300, notifyUrgent: true, hotProjectThreshold: 15000 },
   northStarDeadline: "2026-12-31",

@@ -24,6 +24,7 @@ export const DEFAULT_CONFIG: Config = {
     projectsDir: join(homedir(), "projects"),
     vaultDir: join(homedir(), "Vault"),
     claudeDir: join(homedir(), ".claude"),
+    claudeMemDb: join(homedir(), ".claude-mem", "claude-mem.db"),
   },
   northStarDeadline: "2026-12-31",
   activeWindowDays: 30,
@@ -101,6 +102,7 @@ export function loadConfig(): Config {
       projectsDir: expandHome(cfg.paths.projectsDir),
       vaultDir: expandHome(cfg.paths.vaultDir),
       claudeDir: expandHome(cfg.paths.claudeDir),
+      claudeMemDb: expandHome(cfg.paths.claudeMemDb),
     },
   };
 }

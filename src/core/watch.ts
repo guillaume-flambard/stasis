@@ -8,6 +8,7 @@ import type { ScoredProject } from "../types.ts";
 import type { RoutePlan } from "./route.ts";
 import { scanRepos } from "../adapters/git.ts";
 import { loadVault } from "../adapters/vault.ts";
+import { loadClaudeMem } from "../adapters/claudemem.ts";
 import { buildSignals, isActive } from "../cli.ts";
 import {
   loadShadowState,
@@ -183,14 +184,15 @@ export async function runWatchTick(
   const events: ShadowEvent[] = [];
 
   // Load current state
-  const [repos, usageIndex, vault] = await Promise.all([
+  const [repos, usageIndex, vault, mem] = await Promise.all([
     scanRepos(cfg.paths.projectsDir),
     parseUsage(cfg.paths.claudeDir),
     loadVault(cfg.paths.vaultDir),
+    Promise.resolve(loadClaudeMem(cfg.paths.claudeMemDb, cfg.activeWindowDays)),
   ]);
   const focusState = loadFocus();
 
-  const signals = buildSignals(repos, usageIndex, vault, null, cfg).filter((s) => s.isGit);
+  const signals = buildSignals(repos, usageIndex, vault, null, cfg, mem).filter((s) => s.isGit);
   const activeSignals = signals.filter((s) => isActive(s, cfg));
   const scored = scoreProjects(activeSignals, cfg);
   const quota = computeQuota(cfg.subscriptions, usageIndex.recentEvents, loadCalib());

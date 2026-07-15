@@ -103,6 +103,30 @@ describe("computeFactors", () => {
     expect(s.proximity).toBe(0);
   });
 
+  test("momentum from git commit recency", () => {
+    // 30-day active window: 6 days ago → 1 - 6/30 = 0.8
+    const s = computeFactors(signals({ daysSinceCommit: 6 }), cfg());
+    expect(s.momentum).toBeCloseTo(0.8, 5);
+  });
+
+  test("claude-mem recency lifts momentum for an uncommitted-but-worked project", () => {
+    // No commits, but observations logged 3 days ago → 1 - 3/30 = 0.9
+    const s = computeFactors(
+      signals({ daysSinceCommit: null, mem: { obsRecent: 40, daysSinceObs: 3 } }),
+      cfg(),
+    );
+    expect(s.momentum).toBeCloseTo(0.9, 5);
+  });
+
+  test("momentum takes the most recent of git and claude-mem", () => {
+    // git 20d cold, mem 2d warm → min(20,2)=2 → 1 - 2/30 ≈ 0.933
+    const s = computeFactors(
+      signals({ daysSinceCommit: 20, mem: { obsRecent: 5, daysSinceObs: 2 } }),
+      cfg(),
+    );
+    expect(s.momentum).toBeCloseTo(1 - 2 / 30, 5);
+  });
+
   test("momentum decays with inactivity", () => {
     const fresh = computeFactors(signals({ daysSinceCommit: 0 }), cfg());
     expect(fresh.momentum).toBe(1);

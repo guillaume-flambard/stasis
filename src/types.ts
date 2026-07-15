@@ -66,6 +66,8 @@ export interface Config {
     projectsDir: string;
     vaultDir: string;
     claudeDir: string;
+    /** claude-mem SQLite DB — optional momentum signal; skipped if absent. */
+    claudeMemDb: string;
   };
   analyze: AnalyzeConfig;
   shadow: ShadowConfig;
@@ -94,6 +96,11 @@ export interface ProjectSignals {
   recentOutputTokens: number;
   costUsd: number;
   override: ProjectOverride;
+  /** claude-mem velocity signal: recent observation count + recency. */
+  mem?: {
+    obsRecent: number;
+    daysSinceObs: number | null;
+  };
   /** Vault-derived hints (used only where no explicit override exists). */
   vault?: {
     title: string;
