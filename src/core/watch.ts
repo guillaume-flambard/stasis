@@ -196,9 +196,14 @@ export async function runWatchTick(
   const quota = computeQuota(cfg.subscriptions, usageIndex.recentEvents, loadCalib());
   const gate = overallGate(quota);
 
+  const focusName = focusState.active?.project ?? null;
+  // A committed focus is code-traceable only if it's a git repo we scan.
+  const focusIsCode = focusName != null && (repos.find((r) => r.name === focusName)?.isGit ?? false);
   const sprint = buildSprint(scored, quota, cfg.weights, {
     events: usageIndex.recentEvents,
-    focusProject: focusState.active?.project ?? null,
+    focus: focusState.active ? { project: focusState.active.project, bet: focusState.active.bet } : null,
+    focusIsCode,
+    hours: undefined,
   });
   const route = sprint.route;
 

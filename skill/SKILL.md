@@ -42,6 +42,17 @@ If `shadow-advice.json` has `hasAdvice: true`, weave pending events into the coa
 
 The user already committed. Your job is to keep them honest, not re-open the decision.
 
+**Check `focus.active.traceable` first.** If `traceable: false` (a non-code bet — a job, a course, an interview), `fidelity` is `null` **by design, not scatter**. Do NOT run A2. Use A0.
+
+### A0. Non-code bet (traceable == false)
+
+The commitment leaves no token trace, so you can't measure fidelity — the honesty check is the horizon and the verdict, not tokens.
+
+- Confirm the bet + days left; never say "0%" or "scattering."
+- The route's block 1 is the commitment itself (`route.anchor` == the bet, ~0 tokens); blocks 2+ are portfolio hops to batch *around* the real-world work. Narrate it that way: "`<bet>` is the real work today; if you touch code, `<hop.project>` is the highest-return slice."
+- If overdue → drive the verdict (A3 below).
+- `focus --json.leaks` here = what you coded *instead* — surface it only as neutral context ("meanwhile you shipped X"), not as failure.
+
 ### A1. On track (fidelity >= 0.6, not overdue)
 
 Confirm quickly, then narrate the route.

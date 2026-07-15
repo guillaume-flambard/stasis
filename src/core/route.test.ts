@@ -71,13 +71,41 @@ describe("buildRoute", () => {
   });
 
   test("selects focus project as anchor when present", () => {
-    const r = buildRoute([scored("a"), scored("b")], quota("green"), [], { focusProject: "b" });
+    const r = buildRoute([scored("a"), scored("b")], quota("green"), [], { focus: { project: "b" } });
     expect(r.anchor).toBe("b");
   });
 
-  test("reverts to top score when focus project not in active set", () => {
-    const r = buildRoute([scored("a"), scored("b")], quota("green"), [], { focusProject: "nonexistent" });
-    expect(r.anchor).toBe("a");
+  test("off-portfolio focus anchors the route even when not in scored set", () => {
+    // A committed bet that isn't a scored project (a non-git dir, or inactive):
+    // it must still anchor the route so the FOCUS banner and the route agree.
+    const r = buildRoute([scored("a"), scored("b")], quota("green"), [], {
+      focus: { project: "n8n", bet: "land the job" },
+      focusIsCode: false,
+    });
+    expect(r.anchor).toBe("n8n");
+    expect(r.blocks[0]!.project).toBe("n8n");
+    expect(r.blocks[0]!.kind).toBe("anchor");
+    expect(r.blocks[0]!.task).toBe("land the job");
+  });
+
+  test("non-code off-portfolio anchor costs 0 tokens (leaves no code trace)", () => {
+    const r = buildRoute([scored("a")], quota("green"), [], {
+      focus: { project: "n8n", bet: "prep interview" },
+      focusIsCode: false,
+    });
+    expect(r.blocks[0]!.estTokens).toBe(0);
+  });
+
+  test("off-portfolio focus routes portfolio hops around the anchor", () => {
+    const a = scored("a", { roi: 0.9 }, { percentDone: 40, nextAction: "ship a" });
+    const bigQuota = quota("green", 1, 1_000_000, 10_000);
+    const r = buildRoute([a], bigQuota, [], {
+      focus: { project: "n8n", bet: "job" },
+      focusIsCode: false,
+    });
+    // anchor = n8n, plus a is available as a hop (not excluded as anchor).
+    expect(r.anchor).toBe("n8n");
+    expect(r.blocks.some((bl) => bl.kind === "hop" && bl.project === "a")).toBe(true);
   });
 
   test("red gate = conserve mode", () => {

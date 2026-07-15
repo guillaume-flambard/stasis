@@ -11,6 +11,8 @@ Anti-scatter CLI: scores ~98 local projects, models Claude quota, routes multi-p
 - **Focus loop** (`focus set/review/clear`): commit ONE bet + kill criterion for a horizon; fidelity = % tokens actually on focus; ⚠ scattering <60%; overdue forces verdict.
 - **Routed multi-project sprint** (`core/route.ts`, `sprint --hours N`): anchor (focus) → ROI-per-token hops → return leg. Per-block est-tokens (median of real daily output) + est-minutes. Quota-bounded budget; below-line = deferred w/ honest reason. Dead/ROI<2 never routed.
 - **`/stasis` skill**: decision coach — branches on focus, narrates the route.
+- **Focus↔route coherence** (P0 fix): a committed focus that isn't a scored git project (a non-code bet like a job, or an inactive repo) used to be invisible — banner said n8n, route silently anchored elsewhere. Now the route anchors the commitment itself (off-portfolio block 1, ~0 tok for non-code) and hops portfolio work around it; `focus.traceable` flags non-code bets so fidelity is `null` "judged at verdict" instead of a false "0% ⚠ scattering". `route.ts · focus.ts · sprint.ts · cli.ts · watch.ts` + tests (91 pass).
+- **Typecheck restored**: added `bun-types` + `tsconfig types:["bun-types"]` — `tsc --noEmit` was silently broken (missing node/bun globals). Now clean.
 
 ## Left / candidates
 - ~~**snooze state**: set-aside project (largo-ai) still routes as hop — no exclude-from-route.~~ ✅ `stasis snooze <project>` / `stasis unsnooze <project>` / `--list` / `--clear`. Snoozed projects still score with a `😴` indicator but are excluded from routing, deferred, and switch menu.

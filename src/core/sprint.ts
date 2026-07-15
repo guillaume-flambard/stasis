@@ -111,8 +111,10 @@ const PCT_BY_MODE: Record<SprintMode, number> = { push: 0.6, sustain: 0.4, conse
 export interface SprintOpts {
   /** Recent usage events — feed per-project block-cost estimates in the route. */
   events?: UsageEvent[];
-  /** The committed focus project name; anchors the route if still active. */
-  focusProject?: string | null;
+  /** The committed focus (name + bet); anchors the route even off the board. */
+  focus?: { project: string; bet?: string } | null;
+  /** Is the committed focus a git/code project (scoreable & token-traceable)? */
+  focusIsCode?: boolean;
   /** Session length in hours — sizes the route budget to your actual time. */
   hours?: number;
 }
@@ -128,7 +130,8 @@ export function buildSprint(
   const budgetPct = PCT_BY_MODE[mode];
 
   const route = buildRoute(scored, quota, opts.events ?? [], {
-    focusProject: opts.focusProject,
+    focus: opts.focus,
+    focusIsCode: opts.focusIsCode,
     hours: opts.hours,
   });
   const budgetTokens = route.budgetTokens;

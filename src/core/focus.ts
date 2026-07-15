@@ -62,8 +62,11 @@ export interface FocusStatus {
   focusTokens: number;
   /** Output tokens on everything else since commitment. */
   otherTokens: number;
-  /** focusTokens / (focus+other), 0..1; null if no activity measured. */
+  /** focusTokens / (focus+other), 0..1; null if not token-traceable / no activity. */
   fidelity: number | null;
+  /** Is this bet a code project we can measure fidelity for? Non-git bets (a job,
+   *  a course) leave no token trace — for them fidelity is null by design, not scatter. */
+  traceable: boolean;
   /** Top projects that stole attention, by tokens, desc. */
   leaks: Array<{ name: string; tokens: number }>;
 }
@@ -78,7 +81,15 @@ function belongsTo(cwd: string, project: string): boolean {
  * Note: events are retained ~3 weeks, so very long horizons see a truncated
  * (but still directionally honest) window.
  */
-export function focusStatus(focus: Focus, events: UsageEvent[], now = Date.now()): FocusStatus {
+export function focusStatus(
+  focus: Focus,
+  events: UsageEvent[],
+  now = Date.now(),
+  opts: { isCodeProject?: boolean } = {},
+): FocusStatus {
+  // A non-code bet (isCodeProject === false) leaves no token trace, so fidelity
+  // is meaningless — null by design, never reported as "scattering".
+  const traceable = opts.isCodeProject !== false;
   const setMs = Date.parse(focus.setAt);
   const daysElapsed = Math.max(0, Math.floor((now - setMs) / DAY_MS));
   const daysLeft = focus.horizonDays - daysElapsed;
@@ -111,7 +122,8 @@ export function focusStatus(focus: Focus, events: UsageEvent[], now = Date.now()
     overdue: daysLeft <= 0,
     focusTokens,
     otherTokens,
-    fidelity: total > 0 ? focusTokens / total : null,
+    fidelity: traceable && total > 0 ? focusTokens / total : null,
+    traceable,
     leaks,
   };
 }

@@ -126,6 +126,14 @@ export function isActive(s: ProjectSignals, cfg: Config): boolean {
   return s.daysSinceCommit != null && s.daysSinceCommit <= cfg.activeWindowDays;
 }
 
+/** Is a committed focus a git/code project? Non-git dirs (a job, a course) are
+ *  legit bets but leave no token trace and can't be scored — the route and the
+ *  fidelity readout treat them as off-portfolio. */
+function isCodeProject(name: string | null | undefined, cfg: Config): boolean {
+  if (!name) return false;
+  return existsSync(join(cfg.paths.projectsDir, name, ".git"));
+}
+
 async function loadState(showAll: boolean): Promise<State> {
   const cfg = loadConfig();
   const [repos, usage, vault] = await Promise.all([
@@ -293,7 +301,13 @@ async function cmdDashboard(args: string[]) {
   if (focus.active) {
     const usage = await parseUsage(state.cfg.paths.claudeDir);
     console.log(bold("\n[ FOCUS ]"));
-    console.log(renderFocusStatus(focusStatus(focus.active, usage.recentEvents)));
+    console.log(
+      renderFocusStatus(
+        focusStatus(focus.active, usage.recentEvents, Date.now(), {
+          isCodeProject: isCodeProject(focus.active.project, state.cfg),
+        }),
+      ),
+    );
   }
   console.log(bold("\n[ QUOTA ]"));
   if (state.quota.length === 0) console.log(dim("  no subscriptions configured"));
@@ -310,7 +324,8 @@ async function cmdDashboard(args: string[]) {
     renderSprint(
       buildSprint(state.scored, state.quota, state.cfg.weights, {
         events: state.usage.recentEvents,
-        focusProject: focus.active?.project ?? null,
+        focus: focus.active ? { project: focus.active.project, bet: focus.active.bet } : null,
+        focusIsCode: isCodeProject(focus.active?.project, state.cfg),
       }),
     ),
   );
@@ -430,9 +445,11 @@ async function cmdSprint(args: string[]) {
   const state = await loadState(hasFlag(args, "--all"));
   const hoursArg = argVal(args, "--hours");
   const hours = hoursArg != null && !Number.isNaN(Number(hoursArg)) ? Number(hoursArg) : undefined;
+  const focus = loadFocus().active;
   const plan = buildSprint(state.scored, state.quota, state.cfg.weights, {
     events: state.usage.recentEvents,
-    focusProject: loadFocus().active?.project ?? null,
+    focus: focus ? { project: focus.project, bet: focus.bet } : null,
+    focusIsCode: isCodeProject(focus?.project, state.cfg),
     hours,
   });
   if (hasFlag(args, "--json")) {
@@ -469,9 +486,11 @@ async function cmdSwitch(args: string[]) {
   // No target → ROI-ranked menu among ACTIVE projects (deliberate switch).
   if (!target) {
     const active = await loadState(hasFlag(args, "--all"));
+    const focus = loadFocus().active;
     const plan = buildSprint(active.scored, active.quota, active.cfg.weights, {
       events: active.usage.recentEvents,
-      focusProject: loadFocus().active?.project ?? null,
+      focus: focus ? { project: focus.project, bet: focus.bet } : null,
+      focusIsCode: isCodeProject(focus?.project, active.cfg),
     });
     console.log(
       bold("\n[ SWITCH BY ROI ]") + dim(`  current focus: ${active.scored[0]?.name ?? "—"}`),
@@ -623,20 +642,31 @@ function renderFocusStatus(st: FocusStatus): string {
   const f = st.focus;
   const lines: string[] = [];
   const fid = st.fidelity;
-  const fidStr =
-    fid == null
-      ? dim("no activity yet")
-      : (fid >= 0.6 ? green : fid >= 0.4 ? yellow : red)(`${Math.round(fid * 100)}% on target`);
   const when = st.overdue
     ? red(`OVERDUE by ${-st.daysLeft}d — review it`)
     : dim(`day ${st.daysElapsed}/${f.horizonDays}, ${st.daysLeft}d left`);
   lines.push(`  🎯 ${bold(f.project)}  ${when}`);
   lines.push(`  bet:  ${f.bet}`);
   lines.push(`  kill: ${dim(f.kill)}`);
-  lines.push(`  on-target: ${fidStr}${fid != null && fid < 0.6 ? red("  ⚠ going off track") : ""}`);
-  if (st.leaks.length && (fid == null || fid < 0.8)) {
-    const leak = st.leaks.map((l) => `${l.name} ${fmtTokens(l.tokens)}`).join(", ");
-    lines.push(dim(`  off-focus work: ${leak}`));
+  if (!st.traceable) {
+    // Non-code bet: no token trace, so no fidelity — judged at the verdict.
+    lines.push(`  on-target: ${dim("not token-traced (non-code bet) — judged at the verdict")}`);
+    if (st.leaks.length) {
+      const leak = st.leaks.map((l) => `${l.name} ${fmtTokens(l.tokens)}`).join(", ");
+      lines.push(dim(`  meanwhile you coded: ${leak}`));
+    }
+  } else {
+    const fidStr =
+      fid == null
+        ? dim("no activity yet")
+        : (fid >= 0.6 ? green : fid >= 0.4 ? yellow : red)(`${Math.round(fid * 100)}% on target`);
+    lines.push(
+      `  on-target: ${fidStr}${fid != null && fid < 0.6 ? red("  ⚠ going off track") : ""}`,
+    );
+    if (st.leaks.length && (fid == null || fid < 0.8)) {
+      const leak = st.leaks.map((l) => `${l.name} ${fmtTokens(l.tokens)}`).join(", ");
+      lines.push(dim(`  off-focus work: ${leak}`));
+    }
   }
   if (st.overdue)
     lines.push(
@@ -844,7 +874,9 @@ async function cmdFocus(args: string[]) {
     if (!["kept", "killed", "pivot"].includes(verdict)) {
       // Show the judgment prompt instead of recording.
       const usage = await parseUsage(cfg.paths.claudeDir);
-      const st = focusStatus(state.active, usage.recentEvents);
+      const st = focusStatus(state.active, usage.recentEvents, Date.now(), {
+        isCodeProject: isCodeProject(state.active.project, cfg),
+      });
       console.log(bold("\n[ VERDICT ]"));
       console.log(renderFocusStatus(st));
       console.log(
@@ -877,7 +909,11 @@ async function cmdFocus(args: string[]) {
   // status (default)
   if (hasFlag(args, "--json")) {
     const usage = await parseUsage(cfg.paths.claudeDir);
-    const st = state.active ? focusStatus(state.active, usage.recentEvents) : null;
+    const st = state.active
+      ? focusStatus(state.active, usage.recentEvents, Date.now(), {
+          isCodeProject: isCodeProject(state.active.project, cfg),
+        })
+      : null;
     console.log(JSON.stringify({ active: st, history: state.history }, null, 2));
     return;
   }
@@ -892,7 +928,13 @@ async function cmdFocus(args: string[]) {
     return;
   }
   const usage = await parseUsage(cfg.paths.claudeDir);
-  console.log(renderFocusStatus(focusStatus(state.active, usage.recentEvents)));
+  console.log(
+    renderFocusStatus(
+      focusStatus(state.active, usage.recentEvents, Date.now(), {
+        isCodeProject: isCodeProject(state.active.project, cfg),
+      }),
+    ),
+  );
   console.log("");
 }
 

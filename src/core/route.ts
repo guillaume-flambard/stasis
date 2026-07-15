@@ -78,21 +78,25 @@ function median(nums: number[]): number {
  * Falls back to a difficulty-scaled default when there's no usage yet.
  */
 function estBlockTokens(p: ScoredProject, events: UsageEvent[]): number {
+  // No history: scale the default by difficulty (low effort factor = harder).
+  const effort = p.factors.effort; // 1 = cheap, 0 = expensive
+  const fallback = BLOCK_DEFAULT * (1 + (1 - effort)); // 40k..80k
+  return estTokensByName(p.name, events, fallback);
+}
+
+/**
+ * Same estimate as estBlockTokens but keyed by project name — for an anchor we
+ * don't have a ScoredProject for (a committed focus that's off the active board).
+ */
+function estTokensByName(name: string, events: UsageEvent[], fallback: number): number {
   const perDay = new Map<number, number>();
   for (const e of events) {
-    if (!e.cwd.split("/").includes(p.name)) continue;
+    if (!e.cwd.split("/").includes(name)) continue;
     const day = Math.floor(e.ts / DAY_MS);
     perDay.set(day, (perDay.get(day) ?? 0) + e.outputTokens);
   }
   const days = [...perDay.values()].filter((v) => v > 0);
-  let est: number;
-  if (days.length > 0) {
-    est = median(days);
-  } else {
-    // No history: scale the default by difficulty (low effort factor = harder).
-    const effort = p.factors.effort; // 1 = cheap, 0 = expensive
-    est = BLOCK_DEFAULT * (1 + (1 - effort)); // 40k..80k
-  }
+  const est = days.length > 0 ? median(days) : fallback;
   return Math.round(Math.max(BLOCK_MIN, Math.min(BLOCK_MAX, est)));
 }
 
@@ -117,7 +121,13 @@ export function buildRoute(
   scored: ScoredProject[],
   quota: QuotaStatus[],
   events: UsageEvent[],
-  opts: { focusProject?: string | null; hours?: number } = {},
+  opts: {
+    /** The committed focus (name + bet). Anchors the route. */
+    focus?: { project: string; bet?: string } | null;
+    /** Is the committed focus a git/code project we can score & token-trace? */
+    focusIsCode?: boolean;
+    hours?: number;
+  } = {},
 ): RoutePlan {
   const gate = overallGate(quota);
   const mode = MODE_BY_GATE[gate];
@@ -141,37 +151,69 @@ export function buildRoute(
     };
   }
 
-  // Anchor = the committed focus if it's in the active set, else the top non-snoozed score.
-  const anchor =
-    (opts.focusProject && scored.find((p) => p.name === opts.focusProject)) ||
-    scored.find((p) => !snoozed.has(p.name)) ||
-    scored[0]!;
+  // Anchor resolution. The committed focus anchors the route — three cases:
+  //  - it's an active scored project     → normal anchor block from its score.
+  //  - committed but NOT in `scored`      → off-portfolio anchor (a non-git bet
+  //    like a job/course, or an inactive repo). Show the commitment itself as
+  //    block 1 so the route and the FOCUS banner never disagree, then route hops
+  //    onto the portfolio around it.
+  //  - no commitment                     → anchor the top non-snoozed score.
+  const focusName = opts.focus?.project ?? null;
+  const scoredAnchor = focusName ? scored.find((p) => p.name === focusName) ?? null : null;
+  const offPortfolio = focusName != null && scoredAnchor == null;
+  // The default anchor when no committed focus is present.
+  const defaultAnchor = scored.find((p) => !snoozed.has(p.name)) ?? scored[0]!;
+  const anchorName = offPortfolio ? focusName! : (scoredAnchor ?? defaultAnchor).name;
 
   const blocks: RouteBlock[] = [];
   let used = 0;
   const fits = (t: number) => budgetTokens == null || used + t <= budgetTokens;
 
-  // Block 1 — anchor. Always included (it's the commitment); if conserve mode,
-  // it's a small slice regardless.
-  const anchorTokens = clampConserve(estBlockTokens(anchor, events), mode);
-  blocks.push({
-    project: anchor.name,
-    kind: "anchor",
-    task: taskFor(anchor),
-    stop: stopFor(anchor),
-    why: `your anchor · ROI ${roiOf(anchor)}${
-      anchor.signals.analysis ? ` · ${anchor.signals.analysis.percentDone}% done` : ""
-    }`,
-    roi: roiOf(anchor),
-    estTokens: anchorTokens,
-    estMinutes: estMinutes(anchorTokens),
-  });
+  // Block 1 — anchor. Always included (it's the commitment); conserve mode
+  // shrinks it to a slice regardless.
+  let anchorTokens: number;
+  if (offPortfolio) {
+    // Non-git bets (a job, a course) leave no token trace → estimate 0. An
+    // inactive repo still has usage history we can estimate from.
+    const isCode = opts.focusIsCode === true;
+    anchorTokens = clampConserve(
+      isCode ? estTokensByName(focusName!, events, BLOCK_DEFAULT) : 0,
+      mode,
+    );
+    blocks.push({
+      project: focusName!,
+      kind: "anchor",
+      task: opts.focus?.bet?.trim() || "advance your commitment — one concrete step",
+      stop: "one concrete step toward the bet",
+      why: isCode
+        ? "your commitment · off the active board today"
+        : "your commitment · off-portfolio · not token-traced",
+      roi: 0,
+      estTokens: anchorTokens,
+      estMinutes: anchorTokens > 0 ? estMinutes(anchorTokens) : 0,
+    });
+  } else {
+    const anchor = scoredAnchor ?? defaultAnchor;
+    anchorTokens = clampConserve(estBlockTokens(anchor, events), mode);
+    blocks.push({
+      project: anchor.name,
+      kind: "anchor",
+      task: taskFor(anchor),
+      stop: stopFor(anchor),
+      why: `your anchor · ROI ${roiOf(anchor)}${
+        anchor.signals.analysis ? ` · ${anchor.signals.analysis.percentDone}% done` : ""
+      }`,
+      roi: roiOf(anchor),
+      estTokens: anchorTokens,
+      estMinutes: estMinutes(anchorTokens),
+    });
+  }
   used += anchorTokens;
 
   // Hops — other active projects (excluding snoozed), ranked by ROI-per-token.
   // Conserve mode routes nothing extra; the point is to hold.
   const others = scored
-    .filter((p) => p.name !== anchor.name && !snoozed.has(p.name))
+    .filter((p) => p.name !== anchorName && !snoozed.has(p.name))
     .map((p) => {
       const est = estBlockTokens(p, events);
       return { p, est, roiPerK: roiOf(p) / (est / 1000) };
@@ -201,19 +243,20 @@ export function buildRoute(
     }
 
     // Return hop — the "…then back to P1 to finish" leg. Only when the anchor is
-    // mid-progress (worth returning to, but not finishable in block 1). If it's
-    // already near-done, block 1 ships it and a return leg is redundant.
-    const prox = anchor.factors.proximity;
-    if (prox >= 0.4 && prox < 0.7 && blocks.length > 1 && blocks.length < MAX_BLOCKS) {
+    // a scored project that's mid-progress (worth returning to, but not finishable
+    // in block 1). Off-portfolio anchors have no proximity, so no return leg.
+    const routeAnchor = offPortfolio ? null : (scoredAnchor ?? defaultAnchor);
+    const prox = routeAnchor?.factors.proximity ?? 0;
+    if (routeAnchor && prox >= 0.4 && prox < 0.7 && blocks.length > 1 && blocks.length < MAX_BLOCKS) {
       const closeTokens = Math.round(anchorTokens * 0.6);
       if (fits(closeTokens)) {
         blocks.push({
-          project: anchor.name,
+          project: routeAnchor.name,
           kind: "return",
-          task: `close out: ${taskFor(anchor)}`,
+          task: `close out: ${taskFor(routeAnchor)}`,
           stop: "ship it",
-          why: `highest-value finish — don't leave ${anchor.name} half-done`,
-          roi: roiOf(anchor),
+          why: `highest-value finish — don't leave ${routeAnchor.name} half-done`,
+          roi: roiOf(routeAnchor),
           estTokens: closeTokens,
           estMinutes: estMinutes(closeTokens),
         });
@@ -243,13 +286,17 @@ export function buildRoute(
 
   const totalMinutes = blocks.reduce((n, b) => n + b.estMinutes, 0);
   const note =
-    mode === "conserve"
-      ? `Quota near cap — one small slice on ${anchor.name}, defer the rest until reset.`
-      : blocks.length === 1
-        ? `Single clean run on ${anchor.name}. No cheap ROI hop worth the context switch.`
-        : `Batch each block to its stop before hopping. The order minimizes cold-starts.`;
+    offPortfolio && blocks.length === 1
+      ? `${anchorName} is your bet but leaves no code trace here — do the real-world work, nothing else pulls.`
+      : offPortfolio
+        ? `${anchorName} is the bet; the hops below are portfolio work you can batch around it.`
+        : mode === "conserve"
+          ? `Quota near cap — one small slice on ${anchorName}, defer the rest until reset.`
+          : blocks.length === 1
+            ? `Single clean run on ${anchorName}. No cheap ROI hop worth the context switch.`
+            : `Batch each block to its stop before hopping. The order minimizes cold-starts.`;
 
-  return { gate, mode, anchor: anchor.name, budgetTokens, usedTokens: used, totalMinutes, blocks, deferred, note };
+  return { gate, mode, anchor: anchorName, budgetTokens, usedTokens: used, totalMinutes, blocks, deferred, note };
 }
 
 /** In conserve mode, shrink a block to a token slice so "push hard" can't sneak in. */

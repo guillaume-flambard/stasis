@@ -45,6 +45,22 @@ describe("focusStatus", () => {
     expect(st.otherTokens).toBe(1000);
   });
 
+  test("non-code bet is not traceable — fidelity null, not scatter", () => {
+    const f = focus();
+    // Tokens went elsewhere, but the bet is non-code so this isn't "scattering".
+    const events = [event(1, 1000, "/p/b")];
+    const st = focusStatus(f, events, Date.now(), { isCodeProject: false });
+    expect(st.traceable).toBe(false);
+    expect(st.fidelity).toBeNull();
+  });
+
+  test("code bet is traceable by default", () => {
+    const f = focus();
+    const st = focusStatus(f, [event(1, 1000, "/p/a")]);
+    expect(st.traceable).toBe(true);
+    expect(st.fidelity).toBe(1);
+  });
+
   test("fidelity proportional to focus vs other", () => {
     const f = focus();
     const events = [
