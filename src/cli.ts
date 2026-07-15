@@ -7,6 +7,7 @@ import { parseUsage, type UsageIndex } from "./adapters/usage.ts";
 import { loadVault, type VaultInfo } from "./adapters/vault.ts";
 import { loadClaudeMem, type MemInfo } from "./adapters/claudemem.ts";
 import { loadPaperclip, type PaperclipInfo } from "./adapters/paperclip.ts";
+import { detectCapabilities, hasAI, type Capabilities } from "./adapters/detect.ts";
 import { runAnalysis, type AnalyzeTarget, type AnalysisResult } from "./analyze/analyze.ts";
 import { makeProvider } from "./analyze/provider.ts";
 import { loadAnalysis, saveAnalysis } from "./analyze/store.ts";
@@ -122,6 +123,7 @@ export function buildSignals(
         ? {
             roi: aj.roi,
             percentDone: aj.percentDone,
+            alignment: aj.alignment,
             blocker: aj.blocker,
             nextAction: aj.nextAction,
             confidence: aj.confidence,
@@ -333,6 +335,11 @@ async function cmdDashboard(args: string[]) {
   top.forEach((p, i) => console.log(renderScoreRow(p, i + 1, nameWidth, maxDigits)));
   if (state.scored.length > top.length)
     console.log(dim(`  … ${state.scored.length - top.length} more`));
+  // Self-guidance: without AI analysis, roi/alignment are neutral — say so.
+  if (!loadAnalysis())
+    console.log(
+      dim("  ⓘ roi/alignment are neutral — run `stasis analyze` (needs a model) for real judgments"),
+    );
   console.log(bold("\n[ TODAY ]"));
   console.log(
     renderSprint(
@@ -611,7 +618,7 @@ async function cmdAnalyze(args: string[]) {
 
   // Merge with any prior analysis so a targeted run doesn't wipe the rest.
   const prior = loadAnalysis();
-  const result: AnalysisResult = await runAnalysis(cfg.analyze, targets, {
+  const result: AnalysisResult = await runAnalysis(cfg.analyze, targets, cfg.goal.statement, {
     global: !projFlag && !hasFlag(args, "--no-global"),
     onProgress: (m) => process.stderr.write(dim(`  ${m}\n`)),
   });
@@ -1041,9 +1048,65 @@ async function cmdUnsnooze(args: string[]) {
   console.log(bold(`\n  ✓ ${project} unsnoozed`) + dim("  (back in routing)\n"));
 }
 
+// ---------- onboarding ----------
+/** Ask one question with a default; returns the default on non-TTY (piped) runs. */
+function ask(q: string, def: string, tty: boolean): string {
+  if (!tty) return def;
+  const ans = prompt(`  ${q} ${dim(`[${def || "none"}]`)}`);
+  return ans && ans.trim() ? ans.trim() : def;
+}
+
+/** One-line capability readout for the user. */
+function capLine(c: Capabilities): string {
+  const mark = (on: boolean, label: string) => (on ? green(label) : dim(`${label}✗`));
+  const ai = c.ollama ? "AI(ollama)" : c.apiKey ? "AI(api)" : "AI";
+  return [
+    mark(c.git, "git"),
+    mark(c.claudeUsage, "claude-logs"),
+    mark(hasAI(c), ai),
+    mark(c.vault, "vault"),
+    mark(c.paperclip, "paperclip"),
+  ].join(dim(" · "));
+}
+
+/** Guided first-run setup. Re-runnable via `stasis init`. */
+async function cmdInit(args: string[]) {
+  if (printHelp(args, "init", ["guided first-run setup (folder + your goal); re-run anytime"])) return;
+  const tty = !!process.stdin.isTTY;
+  const cfg = loadConfig(); // seeds a default file if none, then we overwrite with answers
+  console.log(bold("\n🧭 stasis setup") + dim("  — a few quick questions\n"));
+
+  const dir = ask("Where are your projects?", cfg.paths.projectsDir, tty);
+  const statement = ask("Your goal, in one sentence?", cfg.goal.statement, tty);
+  const deadlineRaw = ask("Target date? (YYYY-MM-DD, blank = none)", cfg.goal.deadline ?? "", tty);
+  const deadline = deadlineRaw.trim() ? deadlineRaw.trim() : null;
+
+  saveConfig({
+    ...cfg,
+    paths: { ...cfg.paths, projectsDir: dir },
+    goal: { statement, deadline },
+  });
+
+  const loaded = loadConfig(); // re-load so paths are home-expanded for detection
+  const caps = await detectCapabilities(loaded);
+  console.log(bold("\n  Detected:  ") + capLine(caps));
+
+  if (hasAI(caps)) {
+    const yes = ask("Run a first AI analysis now? (y/N)", "N", tty).toLowerCase().startsWith("y");
+    if (yes) await cmdAnalyze([]);
+  } else {
+    console.log(
+      dim("\n  No AI yet — you'll get a git ranking. Add a local model (Ollama) or an API key"),
+    );
+    console.log(dim("  in the config to unlock ROI/alignment judgments on any folder."));
+  }
+  console.log(dim(`\n  Saved to ${CONFIG_PATH}. Run \`stasis\` for your ranking.\n`));
+}
+
 // ---------- main ----------
 const HELP = `stasis — multi-project scoring & sprint orchestrator
 
+  stasis init                guided setup: your projects folder + your goal
   stasis                     dashboard: quota + ranked scores + today's rec
   stasis score [--all]       ranked project scores with factor breakdown
   stasis usage [--project X] real tokens + cost from Claude Code logs
@@ -1083,11 +1146,22 @@ async function main() {
     rest = argv.slice(1);
   }
   try {
+    // First run (no config yet): guide the user through setup before anything else.
+    // `stasis init` and `help` are exempt (they'd be redundant / need no config).
+    if (!existsSync(CONFIG_PATH) && cmd !== "init" && cmd !== "help") {
+      await cmdInit([]);
+      // For a bare `stasis`, fall through to the dashboard; for a specific
+      // command, stop here — the user can now re-run it against the new config.
+      if (cmd !== undefined && cmd !== "dash" && cmd !== "dashboard") return;
+    }
     switch (cmd) {
       case undefined:
       case "dash":
       case "dashboard":
         await cmdDashboard(rest);
+        break;
+      case "init":
+        await cmdInit(rest);
         break;
       case "score":
         await cmdScore(rest);

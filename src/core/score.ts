@@ -13,10 +13,11 @@ function roiFactor(s: ProjectSignals): number {
   return 0.5;
 }
 
-/** Urgency: explicit override wins; else deadline proximity vs north-star anchor. */
+/** Urgency: explicit override wins; else deadline proximity vs the user's goal. */
 function urgencyFactor(s: ProjectSignals, cfg: Config): number {
   if (s.override.urgency != null) return clamp01(s.override.urgency / 10);
-  const deadline = s.override.deadline ?? cfg.northStarDeadline;
+  const deadline = s.override.deadline ?? cfg.goal.deadline;
+  if (!deadline) return 0.5; // no time pressure declared → neutral
   const ms = Date.parse(deadline);
   if (Number.isNaN(ms)) return 0.5;
   const daysLeft = (ms - Date.now()) / DAY_MS;
@@ -59,9 +60,14 @@ function effortFactor(s: ProjectSignals): number {
   return clamp01(1 - s.dirtyCount / 200);
 }
 
-/** Alignment to north-star: override wins, else Vault tag-derived, else neutral. */
+/**
+ * Alignment to the user's goal. Precedence: explicit override > AI's fit-to-goal
+ * judgment > Vault tag-derived hint > neutral. The AI source is what makes
+ * alignment meaningful for users with no Vault.
+ */
 function alignmentFactor(s: ProjectSignals): number {
   if (s.override.alignment != null) return clamp01(s.override.alignment / 10);
+  if (s.analysis?.alignment != null) return clamp01(s.analysis.alignment / 10);
   if (s.vault?.alignment != null) return clamp01(s.vault.alignment);
   return 0.5;
 }

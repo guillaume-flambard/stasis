@@ -7,7 +7,7 @@ function cfg(overrides?: Partial<Config>): Config {
     paths: { projectsDir: "/p", vaultDir: "/v", claudeDir: "/c", claudeMemDb: "/c/mem.db" },
     analyze: { provider: "ollama", model: "m", fastModel: "fm", baseUrl: "http://localhost:11434", apiKey: null, maxRounds: 2, numCtx: 8192, temperature: 0.2 },
     shadow: { checkInterval: 300, notifyUrgent: true, hotProjectThreshold: 15000 },
-    northStarDeadline: "2026-12-31",
+    goal: { statement: "reach the goal", deadline: "2026-12-31" },
     activeWindowDays: 30,
     subscriptions: [{ name: "max", weeklyTokenCap: null, rolling5hTokenCap: null, resetDay: "Monday" }],
     weights: { roi: 0.2, urgency: 0.1, proximity: 0.15, momentum: 0.15, effort: 0.1, alignment: 0.08, engagement: 0.22 },
@@ -102,6 +102,30 @@ describe("computeFactors", () => {
   test("no git signal gives zero proximity", () => {
     const s = computeFactors(signals({ isGit: false }), cfg());
     expect(s.proximity).toBe(0);
+  });
+
+  test("alignment: AI fit-to-goal outranks vault, under override", () => {
+    const withAi = computeFactors(
+      signals({
+        vault: { title: "t", status: "", tags: [], alignment: 0.2 },
+        analysis: { roi: 5, percentDone: 50, alignment: 9, blocker: "x", nextAction: "y", confidence: 0.8 },
+      }),
+      cfg(),
+    );
+    expect(withAi.alignment).toBeCloseTo(0.9, 5); // analysis 9/10 beats vault 0.2
+    const withOverride = computeFactors(
+      signals({
+        override: { alignment: 3 },
+        analysis: { roi: 5, percentDone: 50, alignment: 9, blocker: "x", nextAction: "y", confidence: 0.8 },
+      }),
+      cfg(),
+    );
+    expect(withOverride.alignment).toBeCloseTo(0.3, 5); // override wins
+  });
+
+  test("urgency is neutral when the goal has no deadline", () => {
+    const s = computeFactors(signals(), cfg({ goal: { statement: "g", deadline: null } }));
+    expect(s.urgency).toBe(0.5);
   });
 
   test("Paperclip done/total outranks AI analysis for proximity", () => {

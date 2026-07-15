@@ -13,7 +13,7 @@ const MINIMAL_CFG: Config = {
   paths: { projectsDir: "/p", vaultDir: "/v", claudeDir: "/c", claudeMemDb: "/c/mem.db" },
   analyze: { provider: "ollama", model: "m", fastModel: "fm", baseUrl: "http://localhost:11434", apiKey: null, maxRounds: 2, numCtx: 8192, temperature: 0.2 },
   shadow: { checkInterval: 300, notifyUrgent: true, hotProjectThreshold: 15000 },
-  northStarDeadline: "2026-12-31",
+  goal: { statement: "reach the goal", deadline: "2026-12-31" },
   activeWindowDays: 30,
   subscriptions: [{ name: "test", weeklyTokenCap: null, rolling5hTokenCap: null, resetDay: "Monday" }],
   weights: { roi: 0.2, urgency: 0.1, proximity: 0.15, momentum: 0.15, effort: 0.1, alignment: 0.08, engagement: 0.22 },

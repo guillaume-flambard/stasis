@@ -71,8 +71,9 @@ export interface Config {
   };
   analyze: AnalyzeConfig;
   shadow: ShadowConfig;
-  /** North-star deadline anchor for urgency when a project has no explicit one. */
-  northStarDeadline: string;
+  /** The user's own north-star — drives urgency, the AI analysis, and alignment.
+   *  Replaces the old hardcoded author goal so stasis works for anyone. */
+  goal: GoalProfile;
   /** A repo idle longer than this (days) is dropped from the active set. */
   activeWindowDays: number;
   subscriptions: Subscription[];
@@ -80,6 +81,13 @@ export interface Config {
   overrides: Record<string, ProjectOverride>;
   /** Paperclip (self-hosted issue tracker) integration; skipped if server down. */
   paperclip: PaperclipConfig;
+}
+
+export interface GoalProfile {
+  /** One plain-language sentence: what the user is trying to achieve. */
+  statement: string;
+  /** Target date (ISO) anchoring urgency, or null for no time pressure. */
+  deadline: string | null;
 }
 
 export interface PaperclipConfig {
@@ -130,6 +138,8 @@ export interface ProjectSignals {
   analysis?: {
     roi: number; // 0..10
     percentDone: number; // 0..100
+    /** Fit to the user's stated goal, 0..10 (universal alignment source). */
+    alignment?: number;
     blocker: string;
     nextAction: string;
     confidence: number;

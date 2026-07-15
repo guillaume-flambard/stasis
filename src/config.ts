@@ -26,7 +26,10 @@ export const DEFAULT_CONFIG: Config = {
     claudeDir: join(homedir(), ".claude"),
     claudeMemDb: join(homedir(), ".claude-mem", "claude-mem.db"),
   },
-  northStarDeadline: "2026-12-31",
+  goal: {
+    statement: "Ship work that creates value and finish what you start",
+    deadline: null,
+  },
   activeWindowDays: 30,
   analyze: {
     provider: "ollama",
@@ -61,13 +64,25 @@ export const DEFAULT_CONFIG: Config = {
   paperclip: { enabled: false, companyMap: {} },
 };
 
-/** Deep-ish merge: user config wins, defaults fill gaps (one level for nested objects). */
-function mergeConfig(base: Config, user: Partial<Config>): Config {
+/**
+ * Resolve the goal profile, migrating the legacy `northStarDeadline` field:
+ * an old config with a deadline but no `goal` inherits that deadline.
+ */
+function mergeGoal(base: Config, user: Partial<Config>): Config["goal"] {
+  if (user.goal) return { ...base.goal, ...user.goal };
+  const legacy = (user as { northStarDeadline?: string }).northStarDeadline;
+  if (legacy) return { statement: base.goal.statement, deadline: legacy };
+  return base.goal;
+}
+
+/** Deep-ish merge: user config wins, defaults fill gaps (one level for nested objects).
+ *  Exported for migration tests. */
+export function mergeConfig(base: Config, user: Partial<Config>): Config {
   return {
     paths: { ...base.paths, ...(user.paths ?? {}) },
     analyze: { ...base.analyze, ...(user.analyze ?? {}) },
     shadow: { ...base.shadow, ...(user.shadow ?? {}) },
-    northStarDeadline: user.northStarDeadline ?? base.northStarDeadline,
+    goal: mergeGoal(base, user),
     activeWindowDays: user.activeWindowDays ?? base.activeWindowDays,
     subscriptions: user.subscriptions ?? base.subscriptions,
     weights: { ...base.weights, ...(user.weights ?? {}) },
