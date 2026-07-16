@@ -24,6 +24,22 @@ npm run tauri dev      # opens the app window
 npm run tauri build    # → .dmg / .msi / .AppImage in src-tauri/target/release/bundle
 ```
 
+## Background / menu bar
+
+stasis lives in the menu bar. Closing the window **hides** it — the app stays
+resident; quitting is an explicit choice from the tray menu.
+
+Tray menu: **Open dashboard** · **Start at login** (toggle) · **Quit stasis**.
+Hovering the icon shows the at-a-glance line: quota gate + 5h burn + how faithful
+you're being to your commitment.
+
+Every 2 minutes the app runs `stasis watch --once`. The CLI owns detection *and*
+urgent notifications (scatter / quota critical / focus overdue — the only three
+kinds that interrupt you); the app just drives the tick and refreshes the tooltip.
+
+> **Don't also run `stasis watch --daemon`** while the app is running, or both
+> will tick and you'll be notified twice. Pick one owner.
+
 ## How it talks to stasis
 
 The Rust command `run_stasis(command)` (`src-tauri/src/lib.rs`) runs
