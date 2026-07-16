@@ -7,12 +7,9 @@ import type { FactorKey, ScoredProject } from "../types.ts";
 import type { QuotaStatus, GateLevel } from "./quota.ts";
 import { overallGate } from "./quota.ts";
 import type { UsageEvent } from "../adapters/usage.ts";
+import { measureTokensPerMin, type RateStats } from "./calibration.ts";
 
 const DAY_MS = 86_400_000;
-// Rough conversion of output tokens → wall-clock minutes of active work.
-// Calibrated loosely from real sessions (~1.5k output tok/min). An ESTIMATE,
-// surfaced as "~Nm", never a promise.
-const TOKENS_PER_MIN = 1500;
 // A work-block is one mergeable chunk. Clamp estimates so a single giant
 // historical day can't make one block eat the whole budget, nor a tiny one vanish.
 const BLOCK_MIN = 15_000;
@@ -53,6 +50,8 @@ export interface RoutePlan {
   budgetTokens: number | null;
   usedTokens: number;
   totalMinutes: number;
+  /** Your measured output-tokens-per-minute (or the default when unmeasured). */
+  rate: RateStats;
   blocks: RouteBlock[];
   deferred: DeferredItem[];
   note: string;
@@ -100,7 +99,9 @@ function estTokensByName(name: string, events: UsageEvent[], fallback: number): 
   return Math.round(Math.max(BLOCK_MIN, Math.min(BLOCK_MAX, est)));
 }
 
-const estMinutes = (tokens: number) => Math.max(5, Math.round(tokens / TOKENS_PER_MIN / 5) * 5);
+/** Tokens → wall-clock minutes at YOUR measured throughput, rounded to 5m. */
+const estMinutesAt = (tokens: number, rate: number) =>
+  Math.max(5, Math.round(tokens / rate / 5) * 5);
 
 const roiOf = (p: ScoredProject) => Number((p.factors.roi * 10).toFixed(1));
 
@@ -132,11 +133,16 @@ export function buildRoute(
   const gate = overallGate(quota);
   const mode = MODE_BY_GATE[gate];
 
+  // Your real throughput, measured from usage history — drives every "~Nm" and
+  // the --hours budget. Falls back to a documented default when unmeasurable.
+  const rate = measureTokensPerMin(events);
+  const estMinutes = (tokens: number) => estMinutesAt(tokens, rate.rate);
+
   // Token budget: from quota headroom (scaled by mode) and/or an explicit --hours,
   // whichever is tighter. Null when neither is known (uncalibrated, no hours).
   const headroom = todayHeadroom(quota);
   const quotaBudget = headroom == null ? null : Math.round(headroom * PCT_BY_MODE[mode]);
-  const hourBudget = opts.hours != null ? Math.round(opts.hours * 60 * TOKENS_PER_MIN) : null;
+  const hourBudget = opts.hours != null ? Math.round(opts.hours * 60 * rate.rate) : null;
   let budgetTokens: number | null;
   if (quotaBudget != null && hourBudget != null) budgetTokens = Math.min(quotaBudget, hourBudget);
   else budgetTokens = quotaBudget ?? hourBudget;
@@ -146,7 +152,7 @@ export function buildRoute(
 
   if (scored.length === 0) {
     return {
-      gate, mode, anchor: null, budgetTokens, usedTokens: 0, totalMinutes: 0,
+      gate, mode, anchor: null, budgetTokens, usedTokens: 0, totalMinutes: 0, rate,
       blocks: [], deferred: [], note: "No active projects. Run `stasis --all` or add one.",
     };
   }
@@ -296,7 +302,7 @@ export function buildRoute(
             ? `Single clean run on ${anchorName}. No cheap ROI hop worth the context switch.`
             : `Batch each block to its stop before hopping. The order minimizes cold-starts.`;
 
-  return { gate, mode, anchor: anchorName, budgetTokens, usedTokens: used, totalMinutes, blocks, deferred, note };
+  return { gate, mode, anchor: anchorName, budgetTokens, usedTokens: used, totalMinutes, rate, blocks, deferred, note };
 }
 
 /** In conserve mode, shrink a block to a token slice so "push hard" can't sneak in. */

@@ -224,8 +224,13 @@ function renderRoute(r: RoutePlan): string {
     r.budgetTokens != null
       ? `${fmtTokens(r.usedTokens)}/${fmtTokens(r.budgetTokens)} tok`
       : `${fmtTokens(r.usedTokens)} tok`;
+  // Be honest about where the minutes come from: your measured throughput, or
+  // a default we haven't earned the right to call yours yet.
+  const rateNote = r.rate.measured
+    ? dim(` (your ${fmtTokens(r.rate.rate)}/min, ${r.rate.samples}d)`)
+    : dim(` (est. ${fmtTokens(r.rate.rate)}/min — unmeasured)`);
   lines.push(
-    `  ${mc(r.mode.toUpperCase())}  ${dim("·")} budget ${budget} ${dim("·")} ~${r.totalMinutes}m ${dim(
+    `  ${mc(r.mode.toUpperCase())}  ${dim("·")} budget ${budget} ${dim("·")} ~${r.totalMinutes}m${rateNote} ${dim(
       "·",
     )} anchor ${bold(r.anchor)}`,
   );
