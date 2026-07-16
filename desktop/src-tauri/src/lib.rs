@@ -235,14 +235,25 @@ pub fn run() {
             spawn_shadow_loop(app.handle().clone());
             Ok(())
         })
-        // Closing the window keeps stasis resident in the menu bar — quitting is
-        // an explicit choice from the tray menu.
+        // Closing the window keeps stasis resident — quitting is an explicit choice
+        // (tray menu, or Cmd-Q). Clicking the Dock icon brings the window back.
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 let _ = window.hide();
                 api.prevent_close();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        // Without this, hiding on close would strand the window: on macOS Tahoe the
+        // tray icon never appears (tauri-apps/tray-icon#273), so the tray menu can't
+        // be the only way back in. The Dock icon has to work.
+        .run(|app, event| {
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+        });
 }
