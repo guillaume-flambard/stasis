@@ -1,5 +1,11 @@
 # DESIGN.md — stasis desktop
 
+## Component system
+
+**shadcn/ui** (Base UI primitives + Tailwind v4) — the source of truth for components. Card, Table, Progress, Tooltip, Separator, Skeleton, Button live in `src/components/ui/`. Never hand-roll a control that the registry already provides; add with `npx shadcn@latest add <name>` (Aceternity effects are available from the same registry: `@aceternity/<name>`).
+
+**No badge pills.** Deliberate: scattered outlined pills made the dashboard read as noisy. Status and metadata are carried by inline typography (small uppercase mono, toned by semantic color) and by data-viz (mini meters), not by chips. Route step kind is carried by its node icon plus a quiet inline label; ROI is a mini bar + number, not a pill.
+
 ## Theme
 
 Refined dark, developer-native. Near-black neutral with a faint cool tint (not pure black, not terminal green). A heads-up display: hairline separators over heavy cards, generous negative space around dense data.

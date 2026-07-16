@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { MOCK } from "./mock";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -106,7 +105,7 @@ export default function App() {
           <div className="flex items-center gap-2 font-mono text-[15px] font-semibold tracking-tight">
             <Compass className="size-[18px] text-primary" />
             stasis
-            <Badge variant="secondary" className="ml-1 text-primary">{IS_TAURI ? "live" : "preview"}</Badge>
+            <span className="ml-1.5 font-sans text-[11px] font-normal text-muted-foreground">{IS_TAURI ? "live" : "preview"}</span>
           </div>
           <div className="ml-auto flex items-center gap-4">
             {quota.map((q) => (
@@ -156,9 +155,9 @@ export default function App() {
                     <div className="flex items-baseline justify-end gap-1.5">
                       <span className="font-mono text-[26px] font-semibold leading-none">{focus.daysElapsed}</span>
                       <span className="text-muted-foreground">/{focus.focus.horizonDays}d</span>
-                      {focus.overdue
-                        ? <Badge variant="destructive" className="ml-1.5">overdue</Badge>
-                        : <Badge variant="outline" className="ml-1.5">{focus.daysLeft}d left</Badge>}
+                      <span className={cn("ml-1.5 text-[12px]", focus.overdue ? "font-medium text-crit" : "text-muted-foreground")}>
+                        {focus.overdue ? "overdue" : `${focus.daysLeft}d left`}
+                      </span>
                     </div>
                     <Fidelity f={focus} />
                   </div>
@@ -175,7 +174,7 @@ export default function App() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Today's route
-                {sprint && <Badge variant="outline" className={cn("uppercase", modeText(sprint.gate))}>{sprint.route.mode}</Badge>}
+                {sprint && <span className={cn("font-mono text-[10px] font-semibold uppercase tracking-wider", modeText(sprint.gate))}>{sprint.route.mode}</span>}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -198,7 +197,7 @@ export default function App() {
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2">
                                 <span className="font-mono font-semibold">{b.project}</span>
-                                <Badge variant="outline" className="text-[9px] uppercase text-muted-foreground">{KIND[b.kind].label}</Badge>
+                                <span className={cn("font-mono text-[9px] uppercase tracking-wider", b.kind === "anchor" ? "text-primary" : "text-muted-foreground/60")}>{KIND[b.kind].label}</span>
                                 <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">~{fmtK(b.estTokens)} · {b.estMinutes}m</span>
                               </div>
                               <div className="mt-0.5 text-[13px]">{b.task}</div>
@@ -241,10 +240,12 @@ export default function App() {
                 : (
                   <div className="divide-y">
                     {sprint?.switchOptions.map((o) => (
-                      <div key={o.name} className="flex items-center gap-2.5 py-2.5 first:pt-0">
-                        <span className="font-mono font-semibold">{o.name}</span>
-                        <Badge variant="outline" className={cn("font-mono", o.roi >= 7 && "border-ok/40 text-ok")}>roi {o.roi.toFixed(1)}</Badge>
-                        <span className="ml-auto max-w-[48%] text-right text-[11px] text-muted-foreground">{o.reason}</span>
+                      <div key={o.name} className="py-2.5 first:pt-0">
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono font-semibold">{o.name}</span>
+                          <RoiStat roi={o.roi} />
+                        </div>
+                        <div className="mt-0.5 text-[11px] text-muted-foreground">{o.reason}</div>
                       </div>
                     ))}
                   </div>
@@ -372,4 +373,18 @@ function SkelRows({ n }: { n: number }) {
 
 function modeText(gate: string) {
   return gate === "green" ? "text-ok" : gate === "yellow" ? "text-warn" : "text-crit";
+}
+
+function RoiStat({ roi }: { roi: number }) {
+  const bar = roi >= 7 ? "bg-ok" : roi >= 3 ? "bg-primary" : "bg-muted-foreground";
+  const txt = roi >= 7 ? "text-ok" : "text-foreground";
+  return (
+    <span className="ml-auto flex items-center gap-2">
+      <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60">roi</span>
+      <span className="h-1 w-10 overflow-hidden rounded-full bg-muted">
+        <span className={cn("block h-full rounded-full", bar)} style={{ width: `${roi * 10}%` }} />
+      </span>
+      <span className={cn("w-6 text-right font-mono text-[12px] font-semibold tabular-nums", txt)}>{roi.toFixed(1)}</span>
+    </span>
+  );
 }
