@@ -6,6 +6,7 @@ import { scanRepos, type GitInfo } from "./adapters/git.ts";
 import { parseUsage, type UsageIndex } from "./adapters/usage.ts";
 import { loadVault, type VaultInfo } from "./adapters/vault.ts";
 import { loadClaudeMem, type MemInfo } from "./adapters/claudemem.ts";
+import { scanFs, type FsInfo } from "./adapters/fs.ts";
 import { loadPaperclip, type PaperclipInfo } from "./adapters/paperclip.ts";
 import { detectCapabilities, hasAI, type Capabilities } from "./adapters/detect.ts";
 import { runAnalysis, type AnalyzeTarget, type AnalysisResult } from "./analyze/analyze.ts";
@@ -81,6 +82,7 @@ export function buildSignals(
   cfg: Config,
   mem: Map<string, MemInfo> = new Map(),
   paperclip: Map<string, PaperclipInfo> = new Map(),
+  fsMap: Map<string, FsInfo> = new Map(),
 ): ProjectSignals[] {
   const byName = new Map<string, { outputTokens: number; recentOutputTokens: number; costUsd: number }>();
   for (const [cwd, pu] of usage.byCwd) {
@@ -112,6 +114,14 @@ export function buildSignals(
       recentOutputTokens: u.recentOutputTokens,
       costUsd: u.costUsd,
       override: cfg.overrides[g.name] ?? {},
+      fs: fsMap.get(g.name)
+        ? {
+            daysSinceModified: fsMap.get(g.name)!.daysSinceModified,
+            fileCount: fsMap.get(g.name)!.fileCount,
+            sizeBytes: fsMap.get(g.name)!.sizeBytes,
+            kinds: fsMap.get(g.name)!.kinds,
+          }
+        : undefined,
       mem: m ? { obsRecent: m.obsRecent, daysSinceObs: m.daysSinceObs } : undefined,
       paperclip: pc
         ? { percentDone: pc.percentDone, done: pc.done, total: pc.total, open: pc.open }
@@ -133,31 +143,46 @@ export function buildSignals(
   });
 }
 
+/**
+ * "Active" = touched recently by ANY signal we trust. Git recency is no longer
+ * required: a folder with no repo is still live work if its files moved (or if
+ * claude-mem saw activity). Without this, non-git projects could never surface.
+ */
 export function isActive(s: ProjectSignals, cfg: Config): boolean {
   if (Object.keys(s.override).length > 0) return true;
-  return s.daysSinceCommit != null && s.daysSinceCommit <= cfg.activeWindowDays;
+  const w = cfg.activeWindowDays;
+  const recency = [
+    s.daysSinceCommit,
+    s.fs?.daysSinceModified ?? null,
+    s.mem?.daysSinceObs ?? null,
+  ].filter((d): d is number => d != null);
+  return recency.some((d) => d <= w);
 }
 
-/** Is a committed focus a git/code project? Non-git dirs (a job, a course) are
- *  legit bets but leave no token trace and can't be scored — the route and the
- *  fidelity readout treat them as off-portfolio. */
+/**
+ * Can we attribute usage to this focus — i.e. is it a real project folder?
+ * Deliberately NOT a `.git` test: usage is attributed by working directory, so a
+ * folder without a repo is traced just as well. Only a bet with no folder at all
+ * (a pure real-world commitment) is untraceable.
+ */
 function isCodeProject(name: string | null | undefined, cfg: Config): boolean {
   if (!name) return false;
-  return existsSync(join(cfg.paths.projectsDir, name, ".git"));
+  return existsSync(join(cfg.paths.projectsDir, name));
 }
 
 async function loadState(showAll: boolean): Promise<State> {
   const cfg = loadConfig();
   const repos = scanRepos(cfg.paths.projectsDir);
-  const [usage, vault, mem, paperclip] = await Promise.all([
+  const [usage, vault, mem, paperclip, fsMap] = await Promise.all([
     parseUsage(cfg.paths.claudeDir),
     Promise.resolve(loadVault(cfg.paths.vaultDir)),
     Promise.resolve(loadClaudeMem(cfg.paths.claudeMemDb, cfg.activeWindowDays)),
     loadPaperclip(repos.map((r) => r.name), cfg.paperclip),
+    Promise.resolve(scanFs(cfg.paths.projectsDir)),
   ]);
-  let signals = buildSignals(repos, usage, vault, loadAnalysis(), cfg, mem, paperclip).filter(
-    (s) => s.isGit,
-  );
+  // No isGit gate: a project is any folder. Git-less work (a designer's assets,
+  // a venture tracked only in Paperclip) is real work and must be rankable.
+  let signals = buildSignals(repos, usage, vault, loadAnalysis(), cfg, mem, paperclip, fsMap);
   if (!showAll) signals = signals.filter((s) => isActive(s, cfg));
   const scored = scoreProjects(signals, cfg);
   const quota = computeQuota(cfg.subscriptions, usage.recentEvents, loadCalib());
@@ -591,15 +616,22 @@ async function cmdAnalyze(args: string[]) {
     process.exit(1);
   }
 
-  // Choose targets: one project, all git repos, or active set (default).
-  const repos = scanRepos(cfg.paths.projectsDir).filter((r) => r.isGit);
+  // Choose targets: one project, every folder, or the active set (default).
+  // Not git-only — the evidence collector degrades to README + file tree, so a
+  // git-less venture can still be judged instead of sitting at a neutral 0.5.
+  const repos = scanRepos(cfg.paths.projectsDir);
+  const fsMap = scanFs(cfg.paths.projectsDir);
   const vault = loadVault(cfg.paths.vaultDir);
+  const recentlyTouched = (name: string, daysSinceCommit: number | null) => {
+    const days = [daysSinceCommit, fsMap.get(name)?.daysSinceModified ?? null].filter(
+      (d): d is number => d != null,
+    );
+    return days.some((d) => d <= cfg.activeWindowDays);
+  };
   let chosen = repos;
   if (projFlag) chosen = repos.filter((r) => r.name === projFlag);
   else if (!hasFlag(args, "--all"))
-    chosen = repos.filter(
-      (r) => r.daysSinceCommit != null && r.daysSinceCommit <= cfg.activeWindowDays,
-    );
+    chosen = repos.filter((r) => recentlyTouched(r.name, r.daysSinceCommit));
 
   if (chosen.length === 0) {
     console.error("stasis: error: no matching projects to analyze.");
@@ -975,6 +1007,8 @@ function scoredJson(p: ScoredProject) {
     dirtyCount: p.signals.dirtyCount,
     aheadCount: p.signals.aheadCount,
     costUsd: Number(p.signals.costUsd.toFixed(2)),
+    isGit: p.signals.isGit,
+    fs: p.signals.fs ?? null,
     mem: p.signals.mem ?? null,
     paperclip: p.signals.paperclip ?? null,
     vault: p.signals.vault

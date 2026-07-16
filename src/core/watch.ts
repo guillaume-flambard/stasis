@@ -10,6 +10,7 @@ import { scanRepos } from "../adapters/git.ts";
 import { loadVault } from "../adapters/vault.ts";
 import { loadClaudeMem } from "../adapters/claudemem.ts";
 import { loadPaperclip } from "../adapters/paperclip.ts";
+import { scanFs } from "../adapters/fs.ts";
 import { buildSignals, isActive } from "../cli.ts";
 import {
   loadShadowState,
@@ -186,17 +187,17 @@ export async function runWatchTick(
 
   // Load current state
   const repos = scanRepos(cfg.paths.projectsDir);
-  const [usageIndex, vault, mem, paperclip] = await Promise.all([
+  const [usageIndex, vault, mem, paperclip, fsMap] = await Promise.all([
     parseUsage(cfg.paths.claudeDir),
     loadVault(cfg.paths.vaultDir),
     Promise.resolve(loadClaudeMem(cfg.paths.claudeMemDb, cfg.activeWindowDays)),
     loadPaperclip(repos.map((r) => r.name), cfg.paperclip),
+    Promise.resolve(scanFs(cfg.paths.projectsDir)),
   ]);
   const focusState = loadFocus();
 
-  const signals = buildSignals(repos, usageIndex, vault, null, cfg, mem, paperclip).filter(
-    (s) => s.isGit,
-  );
+  // Same universe as the CLI: any folder is a project (no isGit gate).
+  const signals = buildSignals(repos, usageIndex, vault, null, cfg, mem, paperclip, fsMap);
   const activeSignals = signals.filter((s) => isActive(s, cfg));
   const scored = scoreProjects(activeSignals, cfg);
   const quota = computeQuota(cfg.subscriptions, usageIndex.recentEvents, loadCalib());

@@ -46,18 +46,29 @@ function proximityFactor(s: ProjectSignals): number {
  * still reads warm; the most recent of the two wins.
  */
 function momentumFactor(s: ProjectSignals, cfg: Config): number {
-  const days = [s.daysSinceCommit, s.mem?.daysSinceObs ?? null].filter(
-    (d): d is number => d != null,
-  );
+  const days = [
+    s.daysSinceCommit,
+    s.mem?.daysSinceObs ?? null,
+    s.fs?.daysSinceModified ?? null,
+  ].filter((d): d is number => d != null);
   if (days.length === 0) return 0;
   const recent = Math.min(...days);
   return clamp01(1 - recent / cfg.activeWindowDays);
 }
 
-/** Effort-inverse: large uncommitted sprawl = expensive to finish → lower. */
+/**
+ * Effort-inverse: cheap-to-finish ranks higher. For a git repo, uncommitted
+ * sprawl is the tell. A non-git folder has no dirty count — without a fallback
+ * it would score as effortless, which is how a 5k-file archive would outrank a
+ * tidy repo — so fall back to sheer size.
+ */
 function effortFactor(s: ProjectSignals): number {
   // >200 dirty files reads as migration/mess; ramp down from a clean baseline.
-  return clamp01(1 - s.dirtyCount / 200);
+  if (s.isGit) return clamp01(1 - s.dirtyCount / 200);
+  const files = s.fs?.fileCount ?? 0;
+  if (files === 0) return 0.5; // nothing measured → neutral, don't flatter it
+  // 600 files (the scan cap) reads as a big, expensive surface.
+  return clamp01(1 - files / 600);
 }
 
 /**

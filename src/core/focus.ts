@@ -87,8 +87,11 @@ export function focusStatus(
   now = Date.now(),
   opts: { isCodeProject?: boolean } = {},
 ): FocusStatus {
-  // A non-code bet (isCodeProject === false) leaves no token trace, so fidelity
-  // is meaningless — null by design, never reported as "scattering".
+  // A bet with no project folder (isCodeProject === false) can't be token-traced,
+  // so fidelity is null by design and never reported as "scattering". Note the
+  // caller decides this from whether the folder exists — NOT from whether it's a
+  // git repo: a folder without a repo still receives attributed usage, and
+  // calling that "untraceable" would excuse real scatter as a measurement gap.
   const traceable = opts.isCodeProject !== false;
   const setMs = Date.parse(focus.setAt);
   const daysElapsed = Math.max(0, Math.floor((now - setMs) / DAY_MS));

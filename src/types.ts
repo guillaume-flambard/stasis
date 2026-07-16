@@ -114,6 +114,13 @@ export interface ProjectSignals {
   recentOutputTokens: number;
   costUsd: number;
   override: ProjectOverride;
+  /** Filesystem signal — works on ANY folder, git or not (the universal tier). */
+  fs?: {
+    daysSinceModified: number | null;
+    fileCount: number;
+    sizeBytes: number;
+    kinds: string[];
+  };
   /** claude-mem velocity signal: recent observation count + recency. */
   mem?: {
     obsRecent: number;

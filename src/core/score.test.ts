@@ -146,6 +146,39 @@ describe("computeFactors", () => {
     expect(s.momentum).toBeCloseTo(0.8, 5);
   });
 
+  test("a non-git folder gets momentum from file recency", () => {
+    // No repo, no claude-mem — only the filesystem knows it's alive. 3d → 1-3/30
+    const s = computeFactors(
+      signals({
+        isGit: false,
+        daysSinceCommit: null,
+        fs: { daysSinceModified: 3, fileCount: 40, sizeBytes: 1e6, kinds: [".md"] },
+      }),
+      cfg(),
+    );
+    expect(s.momentum).toBeCloseTo(0.9, 5);
+  });
+
+  test("non-git effort falls back to size — a huge archive isn't 'effortless'", () => {
+    const tidy = computeFactors(
+      signals({ isGit: false, dirtyCount: 0, fs: { daysSinceModified: 1, fileCount: 60, sizeBytes: 1e6, kinds: [] } }),
+      cfg(),
+    );
+    const huge = computeFactors(
+      signals({ isGit: false, dirtyCount: 0, fs: { daysSinceModified: 1, fileCount: 600, sizeBytes: 1e9, kinds: [] } }),
+      cfg(),
+    );
+    expect(tidy.effort).toBeCloseTo(0.9, 5); // 1 - 60/600
+    expect(huge.effort).toBe(0); // 1 - 600/600
+    // Without the fallback both would be a flattering 1.0 (dirtyCount is 0).
+    expect(huge.effort).toBeLessThan(tidy.effort);
+  });
+
+  test("non-git with no fs measurement is neutral, not flattered", () => {
+    const s = computeFactors(signals({ isGit: false, dirtyCount: 0, fs: undefined }), cfg());
+    expect(s.effort).toBe(0.5);
+  });
+
   test("claude-mem recency lifts momentum for an uncommitted-but-worked project", () => {
     // No commits, but observations logged 3 days ago → 1 - 3/30 = 0.9
     const s = computeFactors(
