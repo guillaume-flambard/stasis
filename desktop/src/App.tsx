@@ -52,6 +52,15 @@ async function call<T>(command: string): Promise<T> {
   return JSON.parse(await invoke<string>("run_stasis", { command })) as T;
 }
 
+/** State-changing CLI call. In the browser preview there's no CLI to change. */
+async function act(action: "switch" | "snooze" | "unsnooze", project: string): Promise<string> {
+  if (!IS_TAURI) {
+    await new Promise((r) => setTimeout(r, 250));
+    return `preview: would ${action} ${project}`;
+  }
+  return invoke<string>("stasis_action", { action, project });
+}
+
 const fmtK = (n: number) =>
   n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n);
 type Tone = "ok" | "warn" | "crit" | "accent";
@@ -76,6 +85,10 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [live, setLive] = useState(true);
+  /** Project currently being acted on — disables its buttons so a double-click
+   *  can't fire two CLI writes. */
+  const [pending, setPending] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -88,12 +101,35 @@ export default function App() {
     } catch (e) { setError(String(e)); }
   }, []);
 
+  const runAction = useCallback(
+    async (action: "switch" | "snooze" | "unsnooze", project: string) => {
+      setPending(project);
+      try {
+        const out = await act(action, project);
+        // The CLI is the source of truth — re-read rather than patching local state.
+        await refresh();
+        setToast(out.split("\n").find((l) => l.trim()) ?? `${action} ${project}`);
+      } catch (e) {
+        setToast(String(e));
+      } finally {
+        setPending(null);
+      }
+    },
+    [refresh],
+  );
+
   useEffect(() => {
     refresh();
     if (!live) return;
     const id = setInterval(refresh, REFRESH_MS);
     return () => clearInterval(id);
   }, [refresh, live]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(id);
+  }, [toast]);
 
   const loading = !updatedAt && !error;
 
@@ -136,6 +172,13 @@ export default function App() {
         {error && (
           <div className="mt-4 rounded-lg border border-crit/40 bg-crit/10 px-3 py-2 font-mono text-[12px] text-crit">
             <b className="mr-2">error</b>{error}
+          </div>
+        )}
+
+        {/* What the CLI actually said back — switching is advisory and can warn. */}
+        {toast && (
+          <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg border bg-card px-4 py-2 text-[12px] shadow-lg">
+            {toast}
           </div>
         )}
 
@@ -216,10 +259,19 @@ export default function App() {
                         </div>
                         <div className="space-y-1.5">
                           {sprint.route.deferred.map((d) => (
-                            <div key={d.project} className="flex items-center gap-2.5 text-[12px]">
+                            <div key={d.project} className="group flex items-center gap-2.5 text-[12px]">
                               <span className="font-mono text-muted-foreground">{d.project}</span>
                               <span className="font-mono text-[11px] text-muted-foreground/60">roi {d.roi.toFixed(1)}</span>
                               <span className="text-muted-foreground/80">{d.reason}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={pending === d.project}
+                                onClick={() => runAction("snooze", d.project)}
+                                className="ml-auto h-5 px-2 text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                              >
+                                {pending === d.project ? "…" : "Snooze"}
+                              </Button>
                             </div>
                           ))}
                         </div>
@@ -240,10 +292,19 @@ export default function App() {
                 : (
                   <div className="divide-y">
                     {sprint?.switchOptions.map((o) => (
-                      <div key={o.name} className="py-2.5 first:pt-0">
+                      <div key={o.name} className="group py-2.5 first:pt-0">
                         <div className="flex items-center gap-3">
                           <span className="font-mono font-semibold">{o.name}</span>
                           <RoiStat roi={o.roi} />
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={pending === o.name}
+                            onClick={() => runAction("switch", o.name)}
+                            className="h-6 px-2 text-[11px] opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                          >
+                            {pending === o.name ? "…" : "Switch"}
+                          </Button>
                         </div>
                         <div className="mt-0.5 text-[11px] text-muted-foreground">{o.reason}</div>
                       </div>
