@@ -36,6 +36,10 @@ export interface AnalyzeTarget {
   name: string;
   dir: string;
   vaultNote?: string;
+  /** Git repo? Decides whether the evidence is framed as code or as a folder of work. */
+  isGit?: boolean;
+  kinds?: string[];
+  daysSinceModified?: number | null;
 }
 
 /** The user's goal is injected into every prompt so the AI judges against THEIR
@@ -48,7 +52,9 @@ function judgeSystem(goal: string): string {
   return (
     "You are a sharp, skeptical product/portfolio analyst. " +
     goalLine(goal) +
-    " You judge a single project from its real evidence (README, commits, files). " +
+    " You judge a single project from its real evidence. A project is any folder of work — " +
+    "code, but equally writing, design, research or admin. Judge what is actually there; " +
+    "never assume software. " +
     "Output ONLY a JSON object with keys: " +
     "roi (integer 0-10, value or revenue potential toward the goal), " +
     "percent_done (integer 0-100, how close to shippable & usable), " +
@@ -92,7 +98,12 @@ export async function analyzeProject(
   cfg: AnalyzeConfig,
   goal: string,
 ): Promise<ProjectJudgment> {
-  const evidence = collectEvidence(target.name, target.dir, target.vaultNote);
+  const evidence = collectEvidence(target.name, target.dir, {
+    vaultNote: target.vaultNote,
+    isGit: target.isGit,
+    kinds: target.kinds,
+    daysSinceModified: target.daysSinceModified,
+  });
   const system = judgeSystem(goal);
 
   let raw = await provider.chatJson(system, evidence.text);

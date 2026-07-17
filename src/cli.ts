@@ -640,10 +640,14 @@ async function cmdAnalyze(args: string[]) {
 
   const targets: AnalyzeTarget[] = chosen.map((r) => {
     const v = vault.get(r.name.toLowerCase());
+    const f = fsMap.get(r.name);
     return {
       name: r.name,
       dir: r.path,
       vaultNote: v ? `${v.title} — tags:[${v.tags.join(",")}] status:${v.status}` : undefined,
+      isGit: r.isGit,
+      kinds: f?.kinds,
+      daysSinceModified: f?.daysSinceModified ?? null,
     };
   });
 
@@ -1108,36 +1112,76 @@ function capLine(c: Capabilities): string {
   ].join(dim(" · "));
 }
 
+/** An API key gets AI working with zero install — the only realistic path for
+ *  someone who isn't going to set up a local model. Shape tells us the vendor. */
+function providerForKey(key: string): { provider: "anthropic" | "openai"; model: string; fastModel: string } | null {
+  if (key.startsWith("sk-ant-"))
+    return { provider: "anthropic", model: "claude-sonnet-5", fastModel: "claude-haiku-4-5-20251001" };
+  if (key.startsWith("sk-")) return { provider: "openai", model: "gpt-4o", fastModel: "gpt-4o-mini" };
+  return null;
+}
+
 /** Guided first-run setup. Re-runnable via `stasis init`. */
 async function cmdInit(args: string[]) {
   if (printHelp(args, "init", ["guided first-run setup (folder + your goal); re-run anytime"])) return;
   const tty = !!process.stdin.isTTY;
-  const cfg = loadConfig(); // seeds a default file if none, then we overwrite with answers
+  let cfg = loadConfig(); // seeds a default file if none, then we overwrite with answers
   console.log(bold("\n🧭 stasis setup") + dim("  — a few quick questions\n"));
 
-  const dir = ask("Where are your projects?", cfg.paths.projectsDir, tty);
-  const statement = ask("Your goal, in one sentence?", cfg.goal.statement, tty);
+  // 1. The folder first: everything else (including how we talk) depends on it.
+  const dir = ask("Which folder holds your projects?", cfg.paths.projectsDir, tty);
+  saveConfig({ ...cfg, paths: { ...cfg.paths, projectsDir: dir } });
+  cfg = loadConfig(); // re-load so the path is home-expanded before we look at it
+
+  // 2. Look before speaking: a folder of documents shouldn't be asked about repos.
+  const caps = await detectCapabilities(cfg);
+  const dev = caps.code || caps.git;
+
+  const statement = ask(
+    dev ? "Your goal, in one sentence?" : "What are you trying to achieve? (one sentence)",
+    cfg.goal.statement,
+    tty,
+  );
   const deadlineRaw = ask("Target date? (YYYY-MM-DD, blank = none)", cfg.goal.deadline ?? "", tty);
   const deadline = deadlineRaw.trim() ? deadlineRaw.trim() : null;
+  cfg = { ...cfg, goal: { statement, deadline } };
 
-  saveConfig({
-    ...cfg,
-    paths: { ...cfg.paths, projectsDir: dir },
-    goal: { statement, deadline },
-  });
-
-  const loaded = loadConfig(); // re-load so paths are home-expanded for detection
-  const caps = await detectCapabilities(loaded);
-  console.log(bold("\n  Detected:  ") + capLine(caps));
-
-  if (hasAI(caps)) {
-    const yes = ask("Run a first AI analysis now? (y/N)", "N", tty).toLowerCase().startsWith("y");
-    if (yes) await cmdAnalyze([]);
-  } else {
+  // 3. AI is what turns a bare recency list into real judgment. For someone who
+  //    isn't going to install a local model, a pasted key is the whole path.
+  if (!hasAI(caps)) {
     console.log(
-      dim("\n  No AI yet — you'll get a git ranking. Add a local model (Ollama) or an API key"),
+      dim(
+        dev
+          ? "\n  No AI configured. Without it, ranking is git/recency only — roi and fit stay neutral."
+          : "\n  Without AI, stasis can only show you which folders are freshest.",
+      ),
     );
-    console.log(dim("  in the config to unlock ROI/alignment judgments on any folder."));
+    console.log(
+      dim(
+        dev
+          ? "  Add a local model (Ollama) later, or paste an API key now for judgments on any folder."
+          : "  Paste an API key to have it read your work and tell you what's worth your time.",
+      ),
+    );
+    const key = ask("API key? (Anthropic or OpenAI, blank = skip)", "", tty).trim();
+    if (key) {
+      const p = providerForKey(key);
+      if (p) {
+        cfg = { ...cfg, analyze: { ...cfg.analyze, ...p, apiKey: key } };
+        console.log(dim(`  ✓ using ${p.provider} (${p.model})`));
+      } else {
+        console.log(yellow("  ⚠ unrecognized key format — skipped. Set analyze.apiKey in the config."));
+      }
+    }
+  }
+
+  saveConfig(cfg);
+  const finalCaps = await detectCapabilities(loadConfig());
+  console.log(bold("\n  Detected:  ") + capLine(finalCaps));
+
+  if (hasAI(finalCaps)) {
+    const yes = ask("Read your projects now? (y/N)", "N", tty).toLowerCase().startsWith("y");
+    if (yes) await cmdAnalyze([]);
   }
   console.log(dim(`\n  Saved to ${CONFIG_PATH}. Run \`stasis\` for your ranking.\n`));
 }
