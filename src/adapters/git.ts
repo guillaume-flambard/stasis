@@ -70,7 +70,8 @@ export function scanRepos(projectsDir: string): GitInfo[] {
   const now = Date.now();
   const out: GitInfo[] = [];
   for (const entry of readdirSync(projectsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
+    // Dirent.isDirectory() is false for symlinks-to-dirs; follow via statSync.
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
     if (entry.name.startsWith(".") || entry.name === "_attic") continue;
     const path = join(projectsDir, entry.name);
     try {

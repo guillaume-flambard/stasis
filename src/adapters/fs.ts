@@ -107,8 +107,15 @@ export function scanFs(projectsDir: string, now: number = Date.now()): Map<strin
     return map;
   }
   for (const e of entries) {
-    if (!e.isDirectory() || e.name.startsWith(".") || e.name === "_attic") continue;
-    map.set(e.name, scanFsInfo(join(projectsDir, e.name), now));
+    // Dirent.isDirectory() is false for symlinks-to-dirs; follow via statSync.
+    if ((!e.isDirectory() && !e.isSymbolicLink()) || e.name.startsWith(".") || e.name === "_attic") continue;
+    const path = join(projectsDir, e.name);
+    try {
+      if (!statSync(path).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    map.set(e.name, scanFsInfo(path, now));
   }
   return map;
 }
