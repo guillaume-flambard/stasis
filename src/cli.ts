@@ -351,6 +351,7 @@ async function cmdDashboard(args: string[]) {
       renderFocusStatus(
         focusStatus(focus.active, usage.recentEvents, Date.now(), {
           isCodeProject: isCodeProject(focus.active.project, state.cfg),
+          excludeCwd: state.cfg.focusExcludeCwd,
         }),
       ),
     );
@@ -938,6 +939,7 @@ async function cmdFocus(args: string[]) {
       const usage = await parseUsage(cfg.paths.claudeDir);
       const st = focusStatus(state.active, usage.recentEvents, Date.now(), {
         isCodeProject: isCodeProject(state.active.project, cfg),
+        excludeCwd: cfg.focusExcludeCwd,
       });
       console.log(bold("\n[ VERDICT ]"));
       console.log(renderFocusStatus(st));
@@ -974,6 +976,7 @@ async function cmdFocus(args: string[]) {
     const st = state.active
       ? focusStatus(state.active, usage.recentEvents, Date.now(), {
           isCodeProject: isCodeProject(state.active.project, cfg),
+          excludeCwd: cfg.focusExcludeCwd,
         })
       : null;
     console.log(JSON.stringify({ active: st, history: state.history }, null, 2));
@@ -994,6 +997,7 @@ async function cmdFocus(args: string[]) {
     renderFocusStatus(
       focusStatus(state.active, usage.recentEvents, Date.now(), {
         isCodeProject: isCodeProject(state.active.project, cfg),
+        excludeCwd: cfg.focusExcludeCwd,
       }),
     ),
   );

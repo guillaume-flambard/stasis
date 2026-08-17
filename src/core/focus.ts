@@ -85,7 +85,7 @@ export function focusStatus(
   focus: Focus,
   events: UsageEvent[],
   now = Date.now(),
-  opts: { isCodeProject?: boolean } = {},
+  opts: { isCodeProject?: boolean; excludeCwd?: string[] } = {},
 ): FocusStatus {
   // A bet with no project folder (isCodeProject === false) can't be token-traced,
   // so fidelity is null by design and never reported as "scattering". Note the
@@ -97,18 +97,22 @@ export function focusStatus(
   const daysElapsed = Math.max(0, Math.floor((now - setMs) / DAY_MS));
   const daysLeft = focus.horizonDays - daysElapsed;
 
+  const excludeCwd = new Set(opts.excludeCwd ?? []);
   const byProject = new Map<string, number>();
   let focusTokens = 0;
   let otherTokens = 0;
   for (const e of events) {
     if (e.ts < setMs) continue;
+    // Exact basename match, NOT belongsTo's path-segment match: excludeCwd names a
+    // specific cwd (e.g. "memo" = sessions run from $HOME itself), and belongsTo
+    // would match "memo" against every path under /Users/memo, wiping out real leaks.
+    const leakName = e.cwd.split("/").pop() ?? e.cwd;
+    if (excludeCwd.has(leakName)) continue; // not scatter — excluded entirely
     const matched = belongsTo(e.cwd, focus.project);
     if (matched) {
       focusTokens += e.outputTokens;
     } else {
       otherTokens += e.outputTokens;
-      // Key leaks by cwd basename for readability.
-      const leakName = e.cwd.split("/").pop() ?? e.cwd;
       byProject.set(leakName, (byProject.get(leakName) ?? 0) + e.outputTokens);
     }
   }

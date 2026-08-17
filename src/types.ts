@@ -76,6 +76,10 @@ export interface Config {
   goal: GoalProfile;
   /** A repo idle longer than this (days) is dropped from the active set. */
   activeWindowDays: number;
+  /** cwd basenames excluded from focus fidelity entirely — not scatter, not counted
+   *  in the denominator. For sessions that aren't project work: run from $HOME
+   *  (basename "memo"-like), a tool's own maintenance session, etc. */
+  focusExcludeCwd: string[];
   subscriptions: Subscription[];
   weights: Weights;
   overrides: Record<string, ProjectOverride>;

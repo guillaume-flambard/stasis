@@ -89,7 +89,7 @@ interface DetectorContext {
 function detectScatter(ctx: DetectorContext): void {
   const f = ctx.focusState.active;
   if (!f) return;
-  const st = focusStatus(f, ctx.usage.recentEvents, ctx.now);
+  const st = focusStatus(f, ctx.usage.recentEvents, ctx.now, { excludeCwd: ctx.cfg.focusExcludeCwd });
   if (st.fidelity == null) return;
 
   const prevFid = ctx.state.lastMeta["fidelity"] ?? 1;
@@ -122,7 +122,7 @@ function detectQuotaCritical(ctx: DetectorContext): void {
 function detectFocusOverdue(ctx: DetectorContext): void {
   const f = ctx.focusState.active;
   if (!f) return;
-  const st = focusStatus(f, ctx.usage.recentEvents, ctx.now);
+  const st = focusStatus(f, ctx.usage.recentEvents, ctx.now, { excludeCwd: ctx.cfg.focusExcludeCwd });
   const prevOverdue = ctx.state.lastMeta["overdue"] === 1;
   if (!prevOverdue && st.overdue) {
     const msg = `⏰ Bet review overdue — "${f.project}" horizon expired. Run \`stasis focus review\`.`;

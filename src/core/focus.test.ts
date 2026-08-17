@@ -141,6 +141,23 @@ describe("focusStatus", () => {
     const st = focusStatus(f, events);
     expect(st.otherTokens).toBe(500);
   });
+
+  test("excludeCwd drops matching events entirely — not scatter, not in denominator", () => {
+    const f = focus();
+    const events = [event(1, 1000, "/p/a"), event(1, 1000, "/Users/memo")];
+    const st = focusStatus(f, events, Date.now(), { excludeCwd: ["memo"] });
+    expect(st.otherTokens).toBe(0);
+    expect(st.fidelity).toBe(1);
+    expect(st.leaks).toEqual([]);
+  });
+
+  test("excludeCwd leaves non-matching leaks untouched", () => {
+    const f = focus();
+    const events = [event(1, 1000, "/p/a"), event(1, 1000, "/Users/memo"), event(1, 500, "/p/b")];
+    const st = focusStatus(f, events, Date.now(), { excludeCwd: ["memo"] });
+    expect(st.otherTokens).toBe(500);
+    expect(st.leaks).toEqual([{ name: "b", tokens: 500 }]);
+  });
 });
 
 describe("parseHorizon", () => {

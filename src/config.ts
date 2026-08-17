@@ -31,6 +31,7 @@ export const DEFAULT_CONFIG: Config = {
     deadline: null,
   },
   activeWindowDays: 30,
+  focusExcludeCwd: [],
   analyze: {
     provider: "ollama",
     model: "qwen3.5:9b", // strong local reasoner for deep + global passes
@@ -84,6 +85,7 @@ export function mergeConfig(base: Config, user: Partial<Config>): Config {
     shadow: { ...base.shadow, ...(user.shadow ?? {}) },
     goal: mergeGoal(base, user),
     activeWindowDays: user.activeWindowDays ?? base.activeWindowDays,
+    focusExcludeCwd: user.focusExcludeCwd ?? base.focusExcludeCwd,
     subscriptions: user.subscriptions ?? base.subscriptions,
     weights: { ...base.weights, ...(user.weights ?? {}) },
     overrides: user.overrides ?? base.overrides,
