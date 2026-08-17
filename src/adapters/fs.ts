@@ -8,6 +8,7 @@
 // roughly how big is it", which is all the scorer needs.
 import { readdirSync, statSync, existsSync } from "node:fs";
 import { join, extname } from "node:path";
+import { resolveProjectDirs } from "./manifest.ts";
 
 const DAY_MS = 86_400_000;
 const MAX_DEPTH = 3;
@@ -96,26 +97,17 @@ export function scanFsInfo(path: string, now: number = Date.now()): FsInfo {
   };
 }
 
-/** Map of project-dir name → FsInfo for every directory under `projectsDir`. */
+/** Map of project name → FsInfo — manifest-resolved, see resolveProjectDirs. */
 export function scanFs(projectsDir: string, now: number = Date.now()): Map<string, FsInfo> {
   const map = new Map<string, FsInfo>();
   if (!existsSync(projectsDir)) return map;
-  let entries;
-  try {
-    entries = readdirSync(projectsDir, { withFileTypes: true });
-  } catch {
-    return map;
-  }
-  for (const e of entries) {
-    // Dirent.isDirectory() is false for symlinks-to-dirs; follow via statSync.
-    if ((!e.isDirectory() && !e.isSymbolicLink()) || e.name.startsWith(".") || e.name === "_attic") continue;
-    const path = join(projectsDir, e.name);
+  for (const { name, path } of resolveProjectDirs(projectsDir)) {
     try {
       if (!statSync(path).isDirectory()) continue;
     } catch {
       continue;
     }
-    map.set(e.name, scanFsInfo(path, now));
+    map.set(name, scanFsInfo(path, now));
   }
   return map;
 }

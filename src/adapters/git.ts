@@ -1,8 +1,9 @@
 // Read-only git scanner. Enumerates repos under projectsDir and collects
 // activity signals. Never mutates anything.
-import { readdirSync, existsSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { resolveProjectDirs } from "./manifest.ts";
 
 export interface GitInfo {
   name: string;
@@ -64,22 +65,18 @@ function collect(name: string, path: string, now: number): GitInfo {
   return { name, path, isGit: true, lastCommitAt, daysSinceCommit, dirtyCount, aheadCount, branch };
 }
 
-/** Scan projectsDir one level deep. Skips dotfiles and the _attic archive. */
+/** Real projects under projectsDir — manifest-resolved, see resolveProjectDirs. */
 export function scanRepos(projectsDir: string): GitInfo[] {
   if (!existsSync(projectsDir)) return [];
   const now = Date.now();
   const out: GitInfo[] = [];
-  for (const entry of readdirSync(projectsDir, { withFileTypes: true })) {
-    // Dirent.isDirectory() is false for symlinks-to-dirs; follow via statSync.
-    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-    if (entry.name.startsWith(".") || entry.name === "_attic") continue;
-    const path = join(projectsDir, entry.name);
+  for (const { name, path } of resolveProjectDirs(projectsDir)) {
     try {
       if (!statSync(path).isDirectory()) continue;
     } catch {
       continue;
     }
-    out.push(collect(entry.name, path, now));
+    out.push(collect(name, path, now));
   }
   return out;
 }
