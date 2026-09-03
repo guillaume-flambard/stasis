@@ -1,4 +1,4 @@
-// Read-only Obsidian Vault adapter. Parses ~/Vault/01-Projects/*.md frontmatter
+// Read-only Obsidian Vault adapter. Parses ~/Vault/1-Projects/*.md frontmatter
 // and derives ROI + north-star alignment from tags (Goals.md north-star =
 // passive, self-serve income). Joins notes to project dirs via the `repo:` field,
 // then filename, then any ~/projects/<dir> body mention. Graceful-skips if absent.
@@ -88,7 +88,7 @@ function deriveFactors(tags: string[], status: string): { roi?: number; align?: 
 /** Map of lowercased project-dir name → VaultInfo. Empty if vault missing. */
 export function loadVault(vaultDir: string): Map<string, VaultInfo> {
   const map = new Map<string, VaultInfo>();
-  const dir = join(vaultDir, "01-Projects");
+  const dir = join(vaultDir, "1-Projects");
   if (!existsSync(dir)) return map;
 
   for (const f of readdirSync(dir, { withFileTypes: true })) {

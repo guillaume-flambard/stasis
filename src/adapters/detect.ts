@@ -83,7 +83,7 @@ export async function detectCapabilities(cfg: Config): Promise<Capabilities> {
     claudeUsage: hasClaudeUsage(cfg.paths.claudeDir),
     ollama,
     apiKey: !!cfg.analyze.apiKey,
-    vault: existsSync(join(cfg.paths.vaultDir, "01-Projects")),
+    vault: existsSync(join(cfg.paths.vaultDir, "1-Projects")),
     paperclip: cfg.paperclip.enabled,
   };
 }
