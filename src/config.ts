@@ -34,7 +34,7 @@ export const DEFAULT_CONFIG: Config = {
   focusExcludeCwd: [],
   analyze: {
     provider: "ollama",
-    model: "qwen3.5:9b", // strong local reasoner for deep + global passes
+    model: "qwen3:8b", // installed local reasoner for deep + global passes
     fastModel: "llama3.2:3b",
     baseUrl: "http://localhost:11434",
     apiKey: null,
