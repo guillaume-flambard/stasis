@@ -18,8 +18,14 @@ export interface ManifestEntry {
 
 /** Status-first roots: real projects live *under* these, never directly in them. */
 const STATUS_DIRS = new Set(["active", "paused", "templates"]);
-/** Infra dirs documented in PROJECTS.md as siblings of the status roots, never projects. */
-const STRUCTURAL_DIRS = new Set(["data", "reports", "Library"]);
+/**
+ * Infra dirs documented in PROJECTS.md as siblings of the status roots, never projects.
+ * `drafts` and `upstream` belong here by the same argument as `data` and `reports`: PROJECTS.md
+ * declares them outside `active/paused` by nature (uncommitted drafts, disposable clones), and
+ * their real children are already manifest rows, so the readdir fallback would otherwise invent a
+ * project named after the container and route tokens into it.
+ */
+const STRUCTURAL_DIRS = new Set(["data", "reports", "Library", "drafts", "upstream"]);
 
 /**
  * Only the manifest table declares projects. Other tables in PROJECTS.md (the

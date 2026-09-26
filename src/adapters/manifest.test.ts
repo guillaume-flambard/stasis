@@ -97,4 +97,28 @@ describe("resolveProjectDirs path resolution", () => {
     const names = resolveProjectDirs(dir).map((e) => e.name);
     expect(names).not.toContain("Library");
   });
+
+  test("does not invent a project named after the drafts or upstream container", () => {
+    writeManifest(
+      [
+        "| Name | Path | Status |",
+        "|------|------|--------|",
+        "| exploration | drafts/exploration | draft |",
+        "| upstream-repo | upstream/some-clone | draft |",
+        "",
+        "| Name | Path | Kind | Status | Stack | Reference |",
+        "|------|------|------|--------|-------|-----------|",
+        "| root-citizen | ~/Developer/root-citizen | git | active | Swift | — |",
+      ].join("\n"),
+    );
+    mkdirSync(join(dir, "drafts", "ideas"), { recursive: true });
+    mkdirSync(join(dir, "upstream", "some-clone"), { recursive: true });
+    const names = resolveProjectDirs(dir).map((e) => e.name);
+    expect(names).not.toContain("drafts");
+    expect(names).not.toContain("upstream");
+    // The real children stay, and a root citizen outside projectsDir keeps its own name.
+    expect(names).toContain("exploration");
+    expect(names).toContain("upstream-repo");
+    expect(names).toContain("root-citizen");
+  });
 });
