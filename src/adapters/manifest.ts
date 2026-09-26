@@ -8,7 +8,8 @@
 // manifest — which the user already curates for exactly this purpose — knows
 // the difference.
 import { readFileSync, readdirSync, statSync, type Dirent } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join } from "node:path";
 
 export interface ManifestEntry {
   name: string;
@@ -18,9 +19,25 @@ export interface ManifestEntry {
 /** Status-first roots: real projects live *under* these, never directly in them. */
 const STATUS_DIRS = new Set(["active", "paused", "templates"]);
 /** Infra dirs documented in PROJECTS.md as siblings of the status roots, never projects. */
-const STRUCTURAL_DIRS = new Set(["data", "reports"]);
+const STRUCTURAL_DIRS = new Set(["data", "reports", "Library"]);
 
-/** Parses every `| Project | Path | ... |` row from PROJECTS.md. Missing file → []. */
+/**
+ * Only the manifest table declares projects. Other tables in PROJECTS.md (the
+ * portfolio-lane table is `| Lane | Projects |`) share the pipe syntax but have
+ * different column meanings, so they are skipped by their header, not by guesswork
+ * on the values.
+ */
+const MANIFEST_HEADERS = new Set(["project", "name"]);
+
+/** Expands a leading `~` and passes absolute paths through untouched. */
+function resolvePath(projectsDir: string, raw: string): string {
+  if (raw === "~") return homedir();
+  if (raw.startsWith("~/")) return join(homedir(), raw.slice(2));
+  if (isAbsolute(raw)) return raw;
+  return join(projectsDir, raw);
+}
+
+/** Parses every `| Project | Path | ... |` row of the manifest table. Missing file → []. */
 export function parseProjectsManifest(projectsDir: string): ManifestEntry[] {
   let text: string;
   try {
@@ -29,13 +46,23 @@ export function parseProjectsManifest(projectsDir: string): ManifestEntry[] {
     return [];
   }
   const entries: ManifestEntry[] = [];
+  let inManifestTable = false;
   for (const line of text.split("\n")) {
-    if (!line.startsWith("|")) continue;
+    if (!line.startsWith("|")) {
+      inManifestTable = false; // a blank or prose line closes the table
+      continue;
+    }
     const cols = line.split("|").slice(1, -1).map((c) => c.trim());
-    if (cols.length < 2) continue;
+    if (cols.some((c) => /^-+$/.test(c)) && cols.every((c) => c === "" || /^-+$/.test(c))) continue; // separator row
+    if (!inManifestTable) {
+      // A header row opens a table; only the manifest table is ours.
+      const [header, second] = cols;
+      if (!header || !second || !MANIFEST_HEADERS.has(header.toLowerCase())) continue;
+      inManifestTable = true;
+      continue;
+    }
     const [name, path] = cols;
     if (!name || !path) continue;
-    if (name === "Project" || /^-+$/.test(name)) continue; // header / separator row
     entries.push({ name, path });
   }
   return entries;
@@ -51,7 +78,7 @@ export function resolveProjectDirs(projectsDir: string): ManifestEntry[] {
   const byName = new Map<string, string>();
 
   for (const e of parseProjectsManifest(projectsDir)) {
-    byName.set(e.name, join(projectsDir, e.path));
+    byName.set(e.name, resolvePath(projectsDir, e.path));
   }
 
   let entries: Dirent[];
