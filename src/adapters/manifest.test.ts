@@ -74,6 +74,25 @@ describe("parseProjectsManifest table awareness", () => {
 });
 
 describe("resolveProjectDirs path resolution", () => {
+  test("category and structural containers are not independent projects", () => {
+    writeManifest("| Name | Path |\n|------|------|\n| intentlane | products/intentlane |\n");
+    for (const name of ["products", "tools", "clients", "infrastructure", "experiments", "active", "_external", "_worktrees", "_scratch", "_data", "_reports"]) {
+      mkdirSync(join(dir, name), { recursive: true });
+    }
+    expect(resolveProjectDirs(dir)).toEqual([
+      { name: "intentlane", path: join(dir, "products/intentlane") },
+    ]);
+  });
+
+  test("reference and compatibility tables do not become scored projects", () => {
+    writeManifest([
+      "| Name | Path |", "|------|------|", "| uni | active/platform/uni |", "",
+      "| Reference | Path |", "|-----------|------|", "| clone | external/clone |", "",
+      "| Name | Target |", "|------|--------|", "| old-uni | active/platform/uni |",
+    ].join("\n"));
+    expect(parseProjectsManifest(dir)).toEqual([{ name: "uni", path: "active/platform/uni" }]);
+  });
+
   test("resolves a manifest-relative path under projectsDir", () => {
     writeManifest(["| Name | Path |", "|------|------|", "| alpha | active/apps/alpha |"].join("\n"));
     expect(resolveProjectDirs(dir)).toContainEqual({ name: "alpha", path: join(dir, "active/apps/alpha") });
@@ -120,5 +139,14 @@ describe("resolveProjectDirs path resolution", () => {
     expect(names).toContain("exploration");
     expect(names).toContain("upstream-repo");
     expect(names).toContain("root-citizen");
+  });
+
+  test("does not invent projects from underscore containers or the jobs alias", () => {
+    writeManifest(["| Name | Path |", "|------|------|", "| alpha | alpha |"].join("\n"));
+    for (const name of ["_external", "_worktrees", "_scratch", "_data", "_reports", "jobs"]) {
+      mkdirSync(join(dir, name), { recursive: true });
+    }
+    const names = resolveProjectDirs(dir).map((e) => e.name);
+    expect(names).toEqual(["alpha"]);
   });
 });
