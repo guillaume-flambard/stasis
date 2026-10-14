@@ -97,7 +97,7 @@ export interface GoalProfile {
 export interface PaperclipConfig {
   /** Off by default — set true once the CLI (`paperclipai`) + server are set up. */
   enabled: boolean;
-  /** Map a Paperclip company name OR issue-prefix to a ~/projects dir name, for
+  /** Map a Paperclip company name OR issue-prefix to a project dir name under projectsDir, for
    *  cases auto-normalization can't resolve (e.g. "Largo IA" → "largo-ai"). */
   companyMap: Record<string, string>;
 }

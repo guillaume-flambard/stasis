@@ -46,7 +46,7 @@ function norm(s: string): string {
 }
 
 /**
- * Resolve which ~/projects dir each active company belongs to. Priority:
+ * Resolve which registered project dir (under projectsDir) each active company belongs to. Priority:
  * explicit companyMap (by name or issue-prefix) > normalized-name match against
  * the repo list. Companies that resolve to nothing are dropped (can't attribute).
  * Pure — no I/O — so it's unit-testable.

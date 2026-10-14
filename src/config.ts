@@ -21,7 +21,9 @@ export function expandHome(p: string): string {
 
 export const DEFAULT_CONFIG: Config = {
   paths: {
-    projectsDir: join(homedir(), "projects"),
+    // The registry root (PROJECTS.md, Path relative to it): MEMOLABS_ROOT, default ~/memolabs.
+    // ~/projects was retired on 2026-10-14.
+    projectsDir: process.env.MEMOLABS_ROOT || join(homedir(), "memolabs"),
     vaultDir: join(homedir(), "Vault"),
     claudeDir: join(homedir(), ".claude"),
     claudeMemDb: join(homedir(), ".claude-mem", "claude-mem.db"),
