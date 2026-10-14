@@ -1,4 +1,4 @@
-// Reads ~/projects/PROJECTS.md — the user's own "one row per project" manifest —
+// Reads <projectsDir>/PROJECTS.md (default $MEMOLABS_ROOT, else ~/memolabs) — the user's own "one row per project" manifest —
 // as the authoritative map of project name → relative path. Needed because the
 // 2026-08-13 status-first reorg (active/paused/templates, then domain folders,
 // then arbitrarily deep containers) means "one level under projectsDir" no longer

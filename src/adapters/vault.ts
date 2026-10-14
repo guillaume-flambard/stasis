@@ -1,7 +1,8 @@
 // Read-only Obsidian Vault adapter. Parses ~/Vault/1-Projects/*.md frontmatter
 // and derives ROI + north-star alignment from tags (Goals.md north-star =
 // passive, self-serve income). Joins notes to project dirs via the `repo:` field,
-// then filename, then any ~/projects/<dir> body mention. Graceful-skips if absent.
+// then filename, then any proj:<name> (canonical citation) or legacy ~/projects/<dir> body
+// mention. Graceful-skips if absent.
 import { readdirSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -65,7 +66,9 @@ function candidates(fm: string, filename: string, body: string): string[] {
     if (first) out.push(first.toLowerCase());
   }
   out.push(filename.replace(/\.md$/i, "").toLowerCase());
-  for (const m of body.matchAll(/~\/projects\/([A-Za-z0-9._-]+)/g)) {
+  // proj:<name> is how notes cite a project since 2026-10-14; ~/projects/<dir> is the
+  // legacy form still found in older notes.
+  for (const m of body.matchAll(/(?:\bproj:|~\/projects\/)([A-Za-z0-9._-]+)/g)) {
     out.push(m[1]!.toLowerCase());
   }
   return [...new Set(out)];
